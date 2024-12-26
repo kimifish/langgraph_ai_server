@@ -1,0 +1,58 @@
+#
+# socket_addr: "xray.zt"
+socket_addr: "127.0.0.1"
+chat_socket_port: 15151
+file_socket_port: 15152
+
+openhab:
+  api_url: 'http://192.168.1.10:8080/rest/items'
+  user: "ai"
+  password: ".env"
+
+models:
+  smarthome:
+    model: "gpt-4o"
+    temperature: 0.1
+    streaming: false
+  shell_assistant:
+    model: "gpt-4o"
+    temperature: 0.15
+    streaming: false
+  code_assistant:
+    model: "gpt-4o"
+    temperature: 0.1
+    streaming: true
+  school_tutor:
+    model: "gpt-4o"
+    temperature: 0.3
+    streaming: true
+  common:
+    # model: "gpt-4o"
+    model: "gpt-4o-mini"
+    temperature: 0.4
+    streaming: false
+
+endpoints:  # TODO: Реализовать отдельные эндпоинты при необходимости
+  smarthome: "/smarthome"
+  shell_assistant: "/shell_assistant"
+  code_assistant: "/code_assistant"
+  school_tutor: "/school_tutor"
+  common_questions: "/common"
+
+calendar:
+  url: "https://192.168.196.200:5232/naima/13ea70e9-7542-30a0-0fcb-2829343bc66e/"
+  username: "naima"
+  password: ".env"
+  name: "kimiHome"  # Calendar name
+
+# Настройки логирования
+logging:
+  # level: "INFO"
+  level: "DEBUG"
+  format: "%(message)s"
+  date_format: "[%X]"
+  markup: true
+  rich_tracebacks: true
+  show_time: true
+  show_path: false 
+
