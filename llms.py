@@ -57,13 +57,16 @@ def define_llm(state: State):
 
 class LLMNode:
     def __init__(self, name: str):
+        # self.prompt_text = eval(f'cfg.prompts.{name}')
+        # llm_config = eval(f'cfg.models.{name}')
+        # try:
+        #     self.tools: list|None = eval(f'cfg.runtime.tools.{name}')
+        # except:
+        #     self.tools = None
         self.name = name
-        self.prompt_text = eval(f'cfg.prompts.{name}')
-        llm_config = eval(f'cfg.models.{name}')
-        try:
-            self.tools: list|None = eval(f'cfg.runtime.tools.{name}')
-        except:
-            self.tools = None
+        self.prompt_text = getattr(cfg.prompts, name, None)
+        llm_config = getattr(cfg.models, name, None)
+        self.tools = getattr(cfg.runtime.tools, name, None)
         self.llm = _get_llm(llm_config.model, llm_config.temperature, llm_config.streaming, self.tools)
         log.debug(self)
 
