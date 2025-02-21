@@ -1,3 +1,6 @@
+# pyright: basic
+# pyright: reportAttributeAccessIssue=false
+
 from datetime import datetime, timedelta
 from langchain_community.tools.tavily_search import TavilySearchResults
 import caldav
@@ -24,9 +27,9 @@ class Singleton(type):
 
 class CalendarManager(metaclass=Singleton):
     def __init__(self):
-        self.url = cfg.calendar.url  # pyright: ignore[reportAttributeAccessIssue]
-        self.username = cfg.calendar.username  # pyright: ignore[reportAttributeAccessIssue]
-        # self.password = cfg.calendar.password  # pyright: ignore[reportAttributeAccessIssue]
+        self.url = cfg.calendar.url
+        self.username = cfg.calendar.username
+        # self.password = cfg.calendar.password
         self.password = os.getenv("CALDAV_PASSWORD")
         
         log.info(f'Initializing calendar manager with url: {self.url}, username: {self.username}, password: {self.password}')
@@ -38,7 +41,7 @@ class CalendarManager(metaclass=Singleton):
                 ssl_verify_cert=False
             )
             self.principal = self.client.principal()
-            self.calendar = self.principal.calendar(name=cfg.calendar.name)   # pyright: ignore[reportAttributeAccessIssue] # или другое имя календаря
+            self.calendar = self.principal.calendar(name=cfg.calendar.name)   # или другое имя календаря
         except Exception as e:
             log.error(f"Ошибка инициализации календаря: {e}")
             raise
@@ -75,7 +78,7 @@ def get_items(categories: str) -> list:
                    }
         headers = {'accept': 'application/json'}
         
-        resp = requests.get(cfg.openhab.api_url,  # pyright: ignore[reportAttributeAccessIssue]
+        resp = requests.get(cfg.openhab.api_url,
                           headers=headers,
                           params=payload,
                           ).json()
@@ -103,7 +106,7 @@ def send_command(item: str, command: str) -> bool:
     headers = {'accept': 'application/json',
                'Content-Type': 'text/plain',
                }
-    x = requests.post(f'{cfg.openhab.api_url}/{item}',  # pyright: ignore[reportAttributeAccessIssue]
+    x = requests.post(f'{cfg.openhab.api_url}/{item}',
                       headers=headers,
                       data=str(command).strip()
                       )
@@ -232,6 +235,7 @@ def _init_tools():
     cfg.update('runtime.tools', {
                                 'common': [tavily_search,],
                                 'smarthome': smarthome_tools_list,
+                                'smarthome_machine': smarthome_tools_list,
                                 'school_tutor': [tavily_search,],
                                 'shell_assistant': [tavily_search,],
                                 'code_assistant': [tavily_search,],

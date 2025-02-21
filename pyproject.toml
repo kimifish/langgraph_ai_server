@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai_server"
-version = "0.1.0"
+version = "0.2.2"
 description = "AI Server using LangChain and FastAPI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,9 +12,21 @@ license = {text = "MIT"}
 authors = [
     {name = "kimifish", email = "kimifish@proton.me"}
 ]
+dependencies = [
+    "rich",
+    "fastapi",
+    "uvicorn",
+    "requests",
+    "python-dotenv",
+    "langchain-core",
+    "langchain-openai",
+    "kimiconfig",
+    "caldav",
+    "urllib3"
+]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: MIT License", 
     "Operating System :: OS Independent"
 ]
 
@@ -23,6 +35,7 @@ Homepage = "https://github.com/kimifish/ai_server"
 
 [tool.setuptools]
 packages = ["ai_server"]
+package-dir = {"" = "src"}
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[project.scripts]
+ai_server = "ai_server.main:main"
