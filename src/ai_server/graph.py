@@ -184,7 +184,7 @@ def route_tools(state: State) -> str:
 
     ai_message: AIMessage
     if isinstance(state, list):
-        ai_message = state[-1] if isinstance(state[-1], AIMessage) else AIMessage(content='')
+        ai_message = state[-1] if isinstance(state[-1], AIMessage) else AIMessage(content='')  # pyright: ignore[reportAssignmentTypeIssue]
     elif messages := state.get('messages', []):
         ai_message = messages[state['llm_to_use']][-1]
     else:

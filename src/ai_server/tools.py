@@ -10,6 +10,7 @@ import logging
 from langchain_core.tools import tool
 from kimiconfig import Config
 import urllib3
+from chromadb_client import ChromaDBClient
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -228,10 +229,48 @@ def get_current_datetime() -> str:
     current = datetime.now()
     return current.strftime("%d.%m.%Y %H:%M")
 
+@tool(parse_docstring=True)
+def get_music_by_tags(tags: str) -> list[str]:
+    """
+    Queries ChromaDB for music files matching the given tags.
+
+    Args:
+        tags: Comma-separated list of music tags/descriptions.
+              Example: "rock, guitar solo, energetic" or "ambient, calm, meditation"
+    
+    Returns:
+        List of matching music filenames, sorted by relevance
+    """
+    try:
+        # Initialize ChromaDB client
+        client = ChromaDBClient(
+            host=cfg.music.chroma_host,
+            port=cfg.music.chroma_port,
+            collection_name="music_collection"
+        )
+        
+        # Split and clean tags
+        query_tags = [tag.strip().lower() for tag in tags.split(',')]
+        
+        # Query the collection
+        results = client.query(
+            query_texts=query_tags,
+            n_results=10  # Adjust number of results as needed
+        )
+        
+        # Extract and return filenames
+        if results and results.documents:
+            return [doc for sublist in results.documents for doc in sublist]
+        
+        return []
+
+    except Exception as e:
+        log.error(f"Error querying music database: {e}")
+        return []
 
 def _init_tools():
     tavily_search = TavilySearchResults(max_results=2)
-    smarthome_tools_list = [send_command, get_items, add_calendar_event, get_calendar_events, get_current_datetime]
+    smarthome_tools_list = [send_command, get_items, add_calendar_event, get_calendar_events, get_current_datetime, get_music_by_tags]  # Added new tool
     cfg.update('runtime.tools', {
                                 'common': [tavily_search,],
                                 'smarthome': smarthome_tools_list,
@@ -253,3 +292,4 @@ if __name__ == '__main__':
     pprint(add_calendar_event.args_schema.schema())
     pprint(get_calendar_events.args_schema.schema())
     pprint(get_current_datetime.args_schema.schema())
+    pprint(get_music_by_tags.args_schema.schema())
