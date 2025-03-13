@@ -8,13 +8,23 @@ from kimiconfig import Config
 from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode 
-from state import State
+from state import State, add_path
 from llms import LLMNode, define_llm, summarize_conversation, cut_conversation
 from utils import sep_line, _log_state, pretty_repr
 
 cfg = Config()
 log = logging.getLogger('ai_server.graph')
 install_rich_traceback(show_locals=True)
+
+
+def _update_path_in_state(state: State, path_point: str):
+    """ 
+    Updates path in state with given value.
+    Needed for routing functions, which can't update state just by return values.
+    """
+    state_path = state.get('path', list(list()))
+    state_path[-1].append(path_point)
+    state.update({'path': state_path})
 
 
 class StartNode:
@@ -28,7 +38,7 @@ class StartNode:
         pass
 
     def __call__(self, state: State):
-        return {'path': 'start'}
+        return {'path': ['start',]}
 
 
 class FinalNode:
@@ -148,26 +158,13 @@ def route_llms(state: State) -> str:
         str: The name of the next node to route to.
     """
     sep_line('route_llms')
-    state_path = state.get('path', [])
-    state_path.append('route_llms')
-    state.update({'path': state_path})
+    _update_path_in_state(state, 'route_llms')
 
     if llm_to_use := state.get('llm_to_use'):
-        match llm_to_use:
-            case 'smarthome':
-                dest = 'smarthome_llm'
-            case 'smarthome_machine':
-                dest = 'smarthome_machine_llm'
-            case 'shell_assistant':
-                dest = 'shell_assistant_llm'
-            case 'code_assistant':
-                dest = 'code_assistant_llm'
-            case 'school_tutor':
-                dest = 'school_tutor_llm'
-            case 'common':
-                dest = 'common_llm'
-            case _:
-                dest = 'define_llm'
+        if llm_to_use in cfg.models.__dict__.keys() and not llm_to_use.startswith('_'):
+            dest = llm_to_use + '_llm'
+        else:
+            dest = 'define_llm'
     else:
         dest = 'define_llm'
     return dest
@@ -183,9 +180,7 @@ def route_tools(state: State) -> str:
         str: The name of the next node to route to, either 'tools' or 'final'.
     """
     sep_line('route_tools')
-    state_path = state.get('path', [])
-    state_path.append('route_tools')
-    state.update({'path': state_path})
+    _update_path_in_state(state, 'route_tools')
 
     ai_message: AIMessage
     if isinstance(state, list):
@@ -209,7 +204,9 @@ def route_shorten_history(state: State):
         str: The name of the next node to execute, either 'cut_conversation' or 'summarize_conversation' or 'END'.
     """
     """Return the next node to execute."""
-    sep_line('route_cut_history')
+    sep_line('route_shorten_history')
+    _update_path_in_state(state, 'route_shorten_history')
+
     current_llm = state['llm_to_use']
     messages = state["messages"][current_llm]
 

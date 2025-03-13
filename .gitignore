@@ -170,3 +170,18 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 src/old
+bkp/ai_server/__init__.py
+bkp/ai_server/graph.py
+bkp/ai_server/history.py
+bkp/ai_server/llms.py
+bkp/ai_server/main-new.py
+bkp/ai_server/main.py
+bkp/ai_server/main1.py
+bkp/ai_server/state.py
+bkp/ai_server/tools.py
+bkp/ai_server/utils.py
+bkp/ai_server/~/.config/nvim/lua/plugins
+bkp/old/graph.py
+bkp/old/llms.py
+bkp/old/main.py
+setup.py.old

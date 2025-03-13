@@ -76,8 +76,8 @@ app = FastAPI(
 
 
 class UserConf(BaseModel):
+    thread_id: RunnableConfig
     user: str = "Undefined"
-    thread_id: RunnableConfig = {"configurable": {"thread_id": user + '_' + str(round(time.time()))}}
     location: str = "Undefined"
     additional_instructions: str = ""
     llm_to_use: str = "Undefined"
@@ -91,11 +91,10 @@ class UserConfs:
         self.user_dict: dict[str, UserConf] = {}
 
     def add(self, **kwargs) -> UserConf:
+        thread_id = kwargs['thread_id']
+        if isinstance(thread_id, str):
+            kwargs['thread_id'] = RunnableConfig(configurable={"thread_id": thread_id})
         conf = UserConf(**kwargs)
-        if isinstance(conf.thread_id, str):
-            conf.thread_id = RunnableConfig(configurable={"thread_id": conf.thread_id})
-            # conf.thread_id = {"configurable": {"thread_id": conf.thread_id } }
-        thread_id = conf.thread_id["configurable"]["thread_id"]  # type: ignore
         self.user_dict[thread_id] = conf
         log.debug(self)
         return conf
@@ -150,7 +149,7 @@ def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf) -> Di
             if next_state == 'END':
                 answer["answer"] = event["messages"][event["llm_to_use"]][-1].content
                 userconf.last_used_llm = event["llm_to_use"]  # Value will be used in future requests for more relevant llm autodetection
-                log.debug(event["path"])
+                log.debug(pretty_repr(event["path"]))
 
     except BadRequestError as e:
         log.error(f"Bad Request while executing graph: \nLast state: {pretty_repr(event)}. \nError: {e}")

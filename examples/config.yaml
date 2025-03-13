@@ -1,0 +1,87 @@
+#
+server:
+  listen_interfaces: "0.0.0.0"
+  listen_port: 8000
+
+openhab:
+  api_url: 'http://192.168.1.10:8080/rest/items'
+  user: "ai"
+  password: ".env"
+
+models:
+  smarthome:
+    model: "gpt-4o"
+    temperature: 0.1
+    streaming: false
+    # Number of messages in history, after which summarization will be performed. 0 if no summary needed. (0 is default)
+    summarize_history_after: 10
+    # Max number of messages, oldest will be cut from request to llm. (10 is default)
+    cut_history_after: 0
+  shell_assistant:
+    model: "gpt-4o"
+    temperature: 0.15
+    streaming: false
+    cut_history_after: 6
+  code_assistant:
+    model: "gpt-4o"
+    temperature: 0.1
+    streaming: true
+    cut_history_after: 12
+    summarize_history_after: 8
+  school_tutor:
+    model: "gpt-4o"
+    temperature: 0.3
+    streaming: true
+    cut_history_after: 12
+    summarize_history_after: 10
+  common:
+    # model: "gpt-4o"
+    model: "gpt-4o-mini"
+    temperature: 0.4
+    streaming: false
+    cut_history_after: 12
+    summarize_history_after: 8
+  # Underscored model configs dont create Nodes, used for internal purposes.
+  _summarize:
+    # model: "gpt-4o"
+    model: "gpt-4o-mini"
+    temperature: 0.1
+    streaming: false
+  _define:
+    # model: "gpt-4o"
+    model: "gpt-4o-mini"
+    temperature: 0
+    streaming: false
+
+endpoints:
+  # Endpoints will be created automatically one for each model name (localhost:8000/common, .../school_tutor, etc.)
+  # Separate endpoint with llm autodetection by description and question context:
+  auto: "ai"
+
+calendar:
+  url: "https://192.168.196.200:5232/naima/13ea70e9-7542-30a0-0fcb-xxxxxxx/"
+  username: "naima"
+  password: ".env"
+  name: "aiCal"  # Calendar name
+
+usernames:
+  kimifish: "Влад, 22 лет"
+  fedonator: "Федя, мальчик 11 лет"
+  tais: "Тася, девочка 9 лет"
+
+locations:
+  F2_LR: "гостиная"
+  GF_D: "столовая"
+  BF_V: "подвал"
+
+# Настройки логирования
+logging:
+  # level: "INFO"
+  level: "DEBUG"
+  format: "%(message)s"
+  date_format: "%X"
+  markup: true
+  rich_tracebacks: true
+  show_time: true
+  show_path: false 
+
