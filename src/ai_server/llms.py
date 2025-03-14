@@ -181,7 +181,7 @@ def summarize_conversation(state: State) -> dict:
     # Checking last 2 messages for not being part of tool call, removing if they are
     for m in state["messages"][current_llm][-2:]:
         if isinstance(m, ToolMessage) or ( isinstance(m, AIMessage) and hasattr(m, 'tool_calls') and len(m.tool_calls) > 0):
-            delete_messages.append(RemoveMessage(id=m.id))
+            delete_messages.append(RemoveMessage(id=m.id))  # pyright: ignore ReportArgumentType
 
     return {
         "summary": { current_llm: f'\n\n      == Previous conversation summary ==\n{response.content}' },

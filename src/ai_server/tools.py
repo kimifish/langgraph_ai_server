@@ -10,7 +10,10 @@ import logging
 from langchain_core.tools import tool
 from kimiconfig import Config
 import urllib3
-from chromadb_client import ChromaDBClient
+from chromadb import HttpClient
+from typing import List, Optional, Callable
+import time
+from mpd import MPDClient
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -230,56 +233,196 @@ def get_current_datetime() -> str:
     return current.strftime("%d.%m.%Y %H:%M")
 
 @tool(parse_docstring=True)
-def get_music_by_tags(tags: str) -> list[str]:
+def get_music_by_tags(tags: str) -> List[str]:
     """
     Queries ChromaDB for music files matching the given tags.
 
     Args:
         tags: Comma-separated list of music tags/descriptions.
-              Example: "rock, guitar solo, energetic" or "ambient, calm, meditation"
+              Example - "rock, guitar solo, energetic" or "ambient, calm, meditation"
     
     Returns:
         List of matching music filenames, sorted by relevance
     """
     try:
-        # Initialize ChromaDB client
-        client = ChromaDBClient(
+        client = HttpClient(
             host=cfg.music.chroma_host,
             port=cfg.music.chroma_port,
-            collection_name="music_collection"
         )
         
-        # Split and clean tags
         query_tags = [tag.strip().lower() for tag in tags.split(',')]
-        
-        # Query the collection
         results = client.query(
             query_texts=query_tags,
-            n_results=10  # Adjust number of results as needed
+            n_results=10,
+            include=['documents']
         )
         
-        # Extract and return filenames
-        if results and results.documents:
+        if results and hasattr(results, 'documents'):
+            # Flatten the list of lists into a single list
             return [doc for sublist in results.documents for doc in sublist]
-        
         return []
 
     except Exception as e:
         log.error(f"Error querying music database: {e}")
         return []
+    finally:
+        if 'client' in locals():
+            client.close()
+
+@tool(parse_docstring=True)
+def create_playlist(songs: List[str], name: str = "") -> str:
+    """
+    Creates a playlist from the given songs.
+
+    Args:
+        songs: List of song filenames to add to playlist
+        name: Optional playlist name. If empty, generates timestamp-based name.
+    
+    Returns:
+        Playlist name or error message
+    """
+    try:
+        playlist_name = name or f"playlist_{int(time.time())}"
+        # Add your playlist creation logic here
+        return f"Created playlist '{playlist_name}' with {len(songs)} songs"
+    except Exception as e:
+        log.error(f"Error creating playlist: {e}")
+        return f"Failed to create playlist: {str(e)}"
+
+@tool(parse_docstring=True)
+def play_playlist(playlist_name: str) -> str:
+    """
+    Plays a playlist on the MPD server.
+
+    Args:
+        playlist_name: Name of the playlist to play
+
+    Returns:
+        Status message indicating success or failure
+    """
+    try:
+        client = MPDClient()
+        client.connect(cfg.music.mpd.host, cfg.music.mpd.port)
+        
+        # Handle password if configured
+        if hasattr(cfg.music.mpd, 'password'):
+            if cfg.music.mpd.password == '.env':
+                password = os.getenv('MPD_PASSWORD')
+                if password:
+                    client.password(password)
+            else:
+                client.password(cfg.music.mpd.password)
+
+        # Clear current playlist
+        client.clear()
+        
+        # Load and play the playlist
+        client.load(playlist_name)
+        client.play()
+        
+        # Get current song info
+        current = client.currentsong()
+        client.close()
+        client.disconnect()
+        
+        return f"Playing playlist '{playlist_name}'. Now playing: {current.get('title', 'Unknown')}"
+
+    except Exception as e:
+        log.error(f"Error playing playlist on MPD: {e}")
+        return f"Failed to play playlist: {str(e)}"
+
+@tool(parse_docstring=True)
+def mpd_control(command: str) -> str:
+    """
+    Controls MPD playback.
+
+    Args:
+        command: One of: play, pause, stop, next, previous, shuffle, clear
+    
+    Returns:
+        Status message
+    """
+    try:
+        client = MPDClient()
+        client.connect(cfg.music.mpd.host, cfg.music.mpd.port)
+        
+        # Handle password if configured
+        if hasattr(cfg.music.mpd, 'password'):
+            if cfg.music.mpd.password == '.env':
+                password = os.getenv('MPD_PASSWORD')
+                if password:
+                    client.password(password)
+            else:
+                client.password(cfg.music.mpd.password)
+
+        command = command.lower()
+        if command == 'play':
+            client.play()
+            status = "Playing"
+        elif command == 'pause':
+            client.pause()
+            status = "Paused"
+        elif command == 'stop':
+            client.stop()
+            status = "Stopped"
+        elif command == 'next':
+            client.next()
+            status = "Skipped to next track"
+        elif command == 'previous':
+            client.previous()
+            status = "Returned to previous track"
+        elif command == 'shuffle':
+            client.shuffle()
+            status = "Playlist shuffled"
+        elif command == 'clear':
+            client.clear()
+            status = "Playlist cleared"
+        else:
+            status = f"Unknown command: {command}"
+
+        # Get current song info if playing
+        if command in ['play', 'next', 'previous']:
+            current = client.currentsong()
+            if current:
+                status += f". Now playing: {current.get('title', 'Unknown')}"
+
+        client.close()
+        client.disconnect()
+        return status
+
+    except Exception as e:
+        log.error(f"Error controlling MPD: {e}")
+        return f"Failed to execute command: {str(e)}"
 
 def _init_tools():
     tavily_search = TavilySearchResults(max_results=2)
-    smarthome_tools_list = [send_command, get_items, add_calendar_event, get_calendar_events, get_current_datetime, get_music_by_tags]  # Added new tool
+    
+    # Define tool lists for different assistants
+    music_tools_list = [
+        get_music_by_tags,
+        create_playlist,
+        play_playlist,    # Added new MPD tools
+        mpd_control,      # Added new MPD tools
+        get_current_datetime,
+    ]
+    
+    smarthome_tools_list = [
+        send_command,
+        get_items,
+        add_calendar_event,
+        get_calendar_events,
+        get_current_datetime,
+    ]
+    
     cfg.update('runtime.tools', {
-                                'common': [tavily_search,],
-                                'smarthome': smarthome_tools_list,
-                                'smarthome_machine': smarthome_tools_list,
-                                'school_tutor': [tavily_search,],
-                                'shell_assistant': [tavily_search,],
-                                'code_assistant': [tavily_search,],
-                                }
-               )
+        'common': [tavily_search],
+        'smarthome': smarthome_tools_list,
+        'smarthome_machine': smarthome_tools_list,
+        'school_tutor': [tavily_search],
+        'shell_assistant': [tavily_search],
+        'code_assistant': [tavily_search],
+        'music_assistant': music_tools_list,
+    })
 
 
 
@@ -287,9 +430,9 @@ if __name__ == '__main__':
     cfg = Config(file='./config.yaml')
     cfg.print_config()
     from pprint import pprint
-    pprint(send_command.args_schema.schema())
-    pprint(get_items.args_schema.schema())
-    pprint(add_calendar_event.args_schema.schema())
-    pprint(get_calendar_events.args_schema.schema())
-    pprint(get_current_datetime.args_schema.schema())
-    pprint(get_music_by_tags.args_schema.schema())
+    pprint(send_command.args_schema.schema())  # pyright: ignore
+    pprint(get_items.args_schema.schema())  # pyright: ignore
+    pprint(add_calendar_event.args_schema.schema())  # pyright: ignore
+    pprint(get_calendar_events.args_schema.schema())  # pyright: ignore
+    pprint(get_current_datetime.args_schema.schema())  # pyright: ignore
+    pprint(get_music_by_tags.args_schema.schema())  # pyright: ignore

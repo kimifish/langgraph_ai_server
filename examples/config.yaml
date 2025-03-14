@@ -8,7 +8,21 @@ openhab:
   user: "ai"
   password: ".env"
 
+llm_api:
+  deepseek:
+    base_url: "https://api.proxyapi.ru/deepseek"
+    api_key: ".env"
+  openai:
+    base_url: "https://api.openai.com"
+    api_key: ".env"
+
 models:
+  music_assistant:
+    model: "gpt-4o"
+    temperature: 0.2
+    streaming: true
+    cut_history_after: 8
+    summarize_history_after: 12
   smarthome:
     model: "gpt-4o"
     temperature: 0.1
@@ -88,4 +102,8 @@ logging:
 music:
   chroma_host: "localhost"  # or your ChromaDB server host
   chroma_port: 8000  # default ChromaDB server port
+  mpd:
+    host: "vault.lan"
+    port: 6600
+    password: ".env"  # Optional: if password is needed, store it in .env file
 
