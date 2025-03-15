@@ -3,7 +3,7 @@
 
 import logging
 from rich.traceback import install as install_rich_traceback
-from typing import Annotated
+from typing import Annotated, Dict
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages, Messages
 from kimiconfig import Config
@@ -11,6 +11,8 @@ from kimiconfig import Config
 cfg = Config()
 log = logging.getLogger('ai_server.state')
 install_rich_traceback(show_locals=True)
+
+Messages_dict = Dict[str, Messages]
 
 
 def add_path(left: str|list, right: str|list) -> Annotated:
@@ -33,8 +35,6 @@ def add_path(left: str|list, right: str|list) -> Annotated:
     for m in right:
         merged[-1].append(m)
     return merged
-
-Messages_dict = dict[str, Messages]
 
 def add_messages_to_dict(left: Messages_dict, right: Messages_dict) -> Messages_dict:
     for k, v in right.items():

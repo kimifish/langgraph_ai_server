@@ -14,6 +14,10 @@ from chromadb import HttpClient
 from typing import List, Optional, Callable
 import time
 from mpd import MPDClient
+from urllib.parse import quote
+import paramiko
+from io import BytesIO, StringIO
+from pathlib import Path
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -27,7 +31,6 @@ class Singleton(type):
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
-
 
 class CalendarManager(metaclass=Singleton):
     def __init__(self):
@@ -50,10 +53,7 @@ class CalendarManager(metaclass=Singleton):
             log.error(f"Ошибка инициализации календаря: {e}")
             raise
 
-
-def get_calendar_manager():
-    return CalendarManager()
-
+# -------------------------openHAB
 
 @tool(parse_docstring=True)
 def get_items(categories: str) -> list:
@@ -117,6 +117,11 @@ def send_command(item: str, command: str) -> bool:
     log.info(x.text)
     # return str(x.status_code == 200)
     return x.status_code == 200
+
+# -------------------------Calendar
+
+def get_calendar_manager():
+    return CalendarManager()
 
 @tool(parse_docstring=True)
 def add_calendar_event(event_data: str) -> str:
@@ -232,44 +237,121 @@ def get_current_datetime() -> str:
     current = datetime.now()
     return current.strftime("%d.%m.%Y %H:%M")
 
-@tool(parse_docstring=True)
-def get_music_by_tags(tags: str) -> List[str]:
+# -------------------------Music
+
+def _upload_playlist_via_ssh(playlist_name: str, content: str, host: str) -> str:
     """
-    Queries ChromaDB for music files matching the given tags.
+    Uploads playlist file to MPD server via SSH.
+    
+    Args:
+        playlist_name: Name of the playlist file
+        content: Content of the playlist
+        host: Hostname from config
+        
+    Returns:
+        Error message or empty string on success
+        
+    Raises:
+        Exception: If SSH/SFTP operations fail
+    """
+    # Upload to MPD server via SSH
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    # Load system SSH configuration
+    ssh_config = paramiko.SSHConfig()
+    user_config_file = os.path.expanduser(f"~/.ssh/config.d/{host.replace('.lan', '')}")
+    if os.path.exists(user_config_file):
+        with open(user_config_file) as f:
+            ssh_config.parse(f)
+    
+    # Get host config
+    host_config = ssh_config.lookup(host.replace(".lan", ""))
+    log.debug(f'{host_config=}')
+    
+    ssh.connect(
+        hostname=host_config.get('hostname', host),
+        username=host_config.get('user', 'pi'),
+        key_filename=host_config.get('identityfile', str([Path.home() / '.ssh' / 'lan'][0])),
+        port=int(host_config.get('port', 22))
+    )
+    
+    # Create SFTP session
+    sftp = ssh.open_sftp()
+    
+    # Convert content to bytes with explicit encoding
+    content_bytes = content.encode('utf-8')
+    
+    # Create BytesIO object
+    playlist_file = BytesIO(content_bytes)
+    
+    # Upload the file
+    remote_path = f"{cfg.music.mpd.playlists_path}/{playlist_name}"
+    sftp.putfo(playlist_file, remote_path)
+    
+    # Close everything
+    playlist_file.close()
+    sftp.close()
+    ssh.close()
+    
+    return ""
+
+@tool(parse_docstring=True)
+def get_music_by_tags(tags: str, limit: int = 10) -> str:
+    """
+    Queries music database for tracks, creates M3U playlist and uploads it to MPD server.
 
     Args:
         tags: Comma-separated list of music tags/descriptions.
               Example - "rock, guitar solo, energetic" or "ambient, calm, meditation"
+        limit: Maximum number of tracks to return (default: 10)
     
     Returns:
-        List of matching music filenames, sorted by relevance
+        Name of the created playlist (without path) or error message.
+        If error occurs, do not retry unless specifically mentioned.
     """
     try:
-        client = HttpClient(
-            host=cfg.music.chroma_host,
-            port=cfg.music.chroma_port,
-        )
+        # Prepare the URL with encoded tags
+        encoded_tags = quote(tags)
+        url = f"{cfg.music.music_db.host}:{cfg.music.music_db.port}{cfg.music.music_db.endpoint}/?tags={encoded_tags}&limit={limit}"
         
-        query_tags = [tag.strip().lower() for tag in tags.split(',')]
-        results = client.query(
-            query_texts=query_tags,
-            n_results=10,
-            include=['documents']
-        )
+        # Get tracks from music database
+        response = requests.get(url)
+        response.raise_for_status()
+        tracks = response.json()
         
-        if results and hasattr(results, 'documents'):
-            # Flatten the list of lists into a single list
-            return [doc for sublist in results.documents for doc in sublist]
-        return []
+        if not tracks:
+            return "No tracks found matching these tags. Try different tags or descriptions."
 
-    except Exception as e:
+        # Create playlist name with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_tags = tags.replace(',', '').replace(' ', '_')[:20]  # First 20 chars of tags without spaces and commas
+        playlist_name = f"ai_{safe_tags}_{timestamp}.m3u"
+        
+        # Create M3U content with explicit line endings
+        m3u_content = "#EXTM3U\n" + "\n".join(tracks) + "\n"
+        
+        try:
+            error = _upload_playlist_via_ssh(playlist_name, m3u_content, cfg.music.mpd.host)
+            if error:
+                log.error(f"SSH upload error: {error}")
+                return "Music system is currently unavailable. Please try again in a few minutes. Do not retry immediately."
+                
+            log.info(f"Created playlist {playlist_name} with {len(tracks)} tracks")
+            return playlist_name
+
+        except Exception as e:
+            log.error(f"SSH/SFTP error: {e}")
+            return "Music system is currently unreachable. This likely requires administrator attention. Please try again later or use other music-related commands."
+            
+    except requests.exceptions.RequestException as e:
         log.error(f"Error querying music database: {e}")
-        return []
-    finally:
-        if 'client' in locals():
-            client.close()
+        return "Music database is currently unavailable. This is likely a temporary issue. Please try again in a few minutes. Do not retry immediately."
+    except Exception as e:
+        log.error(f"Unexpected error while creating playlist: {e}")
+        return "An unexpected error occurred with the music system. This requires administrator attention. Please try other music-related commands instead."
 
-@tool(parse_docstring=True)
+# @tool(parse_docstring=True)
 def create_playlist(songs: List[str], name: str = "") -> str:
     """
     Creates a playlist from the given songs.
@@ -317,7 +399,7 @@ def play_playlist(playlist_name: str) -> str:
         client.clear()
         
         # Load and play the playlist
-        client.load(playlist_name)
+        client.load(playlist_name.replace(".m3u", ""))
         client.play()
         
         # Get current song info
@@ -394,13 +476,15 @@ def mpd_control(command: str) -> str:
         log.error(f"Error controlling MPD: {e}")
         return f"Failed to execute command: {str(e)}"
 
+# -------------------------Lists
+
 def _init_tools():
     tavily_search = TavilySearchResults(max_results=2)
     
     # Define tool lists for different assistants
     music_tools_list = [
         get_music_by_tags,
-        create_playlist,
+        # create_playlist,
         play_playlist,    # Added new MPD tools
         mpd_control,      # Added new MPD tools
         get_current_datetime,

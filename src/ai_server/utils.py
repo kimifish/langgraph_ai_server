@@ -7,7 +7,7 @@ from rich.pretty import pretty_repr
 from rich.theme import Theme
 from rich.traceback import install as install_rich_traceback
 from rich.tree import Tree
-from deepdiff import DeepDiff
+from deepdiff.diff import DeepDiff
 from state import State
 from kimiconfig import Config
 
@@ -17,7 +17,6 @@ install_rich_traceback(show_locals=True)
 
 def _log_state(state: State, tabs: int = 0):
     log.debug(pretty_repr(state, indent_size=4, max_string=50))
-
 
 def _parse_key(key: str):
     # log.debug(f"key: {key}")
@@ -38,7 +37,6 @@ def _parse_key(key: str):
         # raise ValueError(f"Input string is not in the expected format: {key}")
         return [], 0
 
-
 # def _grow_branch(tree: Tree, action: str, list_of_names: list[str], index: int, value):
 #     current_branch = tree
 #     for name in list_of_names:
@@ -57,7 +55,6 @@ def sep_line(name: str, length: int = 90, color: str = 'light steel blue', symbo
         line = line[:-1]
     log.debug(f"[{color}]{line}[/]")
 
-
 def log_diff(dict1, dict2):
     diff = DeepDiff(dict1, dict2)
     for key, value in diff.items():
@@ -75,6 +72,8 @@ def log_diff(dict1, dict2):
                 log.debug(f"{key}:" + pretty_repr(value))
         except AttributeError as e:
             log.error(f'Key {key} does not contain items.')
+
+# ----------------themes
 
 common_theme = Theme({
     "repr.attrib_name": "khaki3",
