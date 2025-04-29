@@ -9,15 +9,15 @@ from importlib.metadata import version, PackageNotFoundError
 
 # Core components
 from .main import app, main
-from .state import State, add_path
+from .models.state import State, add_path
 from .llms import LLMNode, define_llm
-from .graph import _init_graph
-from .tools import _init_tools
+from .graph import init_graph
+from .llm_tools import init_tools
 
 try:
     __version__ = version("ai_server")
 except PackageNotFoundError:
-    __version__ = "0.2.2"  # fallback version
+    __version__ = "0.3.0"  # fallback version
 
 __all__ = [
     "app",
@@ -26,6 +26,6 @@ __all__ = [
     "add_path",
     "LLMNode",
     "define_llm",
-    "_init_graph",
-    "_init_tools",
+    "init_graph",
+    "init_tools",
 ]

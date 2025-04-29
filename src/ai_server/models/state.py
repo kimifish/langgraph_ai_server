@@ -2,16 +2,14 @@
 # pyright: reportAttributeAccessIssue=false
 
 import logging
-from rich.traceback import install as install_rich_traceback
 from typing import Annotated, Dict
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages, Messages
-from kimiconfig import Config
 
-cfg = Config()
-log = logging.getLogger('ai_server.state')
-install_rich_traceback(show_locals=True)
+from ai_server.config import cfg, APP_NAME
+log = logging.getLogger(f'{APP_NAME}.{__name__}')
 
+MAX_PATHS = 10
 Messages_dict = Dict[str, Messages]
 
 
@@ -30,6 +28,8 @@ def add_path(left: str|list, right: str|list) -> Annotated:
     if not isinstance(right, list):
         right = [right]
     merged = left.copy()
+    if len(merged) > MAX_PATHS:
+        merged = merged[-MAX_PATHS:]
     if right[0] == 'start':
         merged.append(list())
     for m in right:
@@ -39,7 +39,7 @@ def add_path(left: str|list, right: str|list) -> Annotated:
 def add_messages_to_dict(left: Messages_dict, right: Messages_dict) -> Messages_dict:
     for k, v in right.items():
         # log.debug(f'{k=}, {v=}')
-        left[k] = add_messages(left=left.get(k, []), right = v if isinstance(v, list) else [v] )
+        left[k] = add_messages(left=left.get(k, []), right=v if isinstance(v, list) else [v])
     return left
 
 def add_summary(left: dict, right: dict) -> dict:

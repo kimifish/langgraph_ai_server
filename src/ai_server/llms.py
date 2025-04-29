@@ -7,25 +7,29 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage, HumanMessage, RemoveMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
-from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from kimiconfig import Config
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.traceback import install as install_rich_traceback
 from rich.pretty import pretty_repr
-from state import State
-from utils import prompt_theme, sep_line
 
-cfg = Config(use_dataclasses=True)
+from ai_server.config import cfg, APP_NAME
+from ai_server.models.state import State
+from ai_server.logs.utils import sep_line
+from ai_server.logs.themes import prompt_theme
+
 prompt_console = Console(record=True, theme=prompt_theme)
-log = logging.getLogger('ai_server.llms')
+log = logging.getLogger(f'{APP_NAME}.{__name__}')
 log.addHandler(RichHandler(console=prompt_console, markup=True, log_time_format='%X'))
 log.propagate = False
-install_rich_traceback(show_locals=True)
 
     
-def _get_llm(model: str, temperature: float|None = None, streaming: bool=False, tools: list|None = None) -> BaseChatModel|Runnable|None:
+def _get_llm(
+    model: str, 
+    temperature: float|None = None, 
+    streaming: bool=False, 
+    proxy: str|None = None,
+    tools: list|None = None
+    ) -> BaseChatModel|Runnable|None:
     llm: BaseChatModel|Runnable|None = None
 
     args = {
@@ -34,12 +38,34 @@ def _get_llm(model: str, temperature: float|None = None, streaming: bool=False, 
     }
     if temperature:
         args['temperature'] = temperature
+    if proxy is not None:
+        import httpx
+        http_client = httpx.Client(proxy=cfg.proxies.__dict__.get(proxy, None))
+        args['http_client'] = http_client
     if tools:
         args['tools'] = tools
 
     if model in ('o1', 'o3-mini', 'gpt-4o', 'gpt-4o-mini', 'o1-mini', 'o1-preview'):
         from langchain_openai import ChatOpenAI
         llm = ChatOpenAI(**args)
+    
+    elif model.lower().startswith('aihubmix_'):
+        args['model'] = model[9:]
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(
+            base_url=cfg.llm_api.aihubmix.base_url, 
+            api_key=cfg.llm_api.aihubmix.api_key, 
+            **args
+            )
+    
+    elif model.lower().startswith('openrouter_'):
+        args['model'] = model[11:]
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(
+            base_url=cfg.llm_api.openrouter.base_url, 
+            api_key=cfg.llm_api.openrouter.api_key, 
+            **args
+            )
 
     elif model.lower().startswith('deepseek'):
         model_endpoints = {
@@ -85,13 +111,38 @@ def _get_user_desc(username: str) -> str:
     return username
 
 
-def all_tool_calls_got_answers(messages: list) -> bool:
-    ai_message_ids = {tool_call['id'] for m in messages if isinstance(m, AIMessage) and hasattr(m, 'tool_calls') for tool_call in m.tool_calls}
-    tool_message_ids = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
-    sep_line('checking tool answers', symbol='•')
-    log.debug(pretty_repr(ai_message_ids))
-    log.debug(pretty_repr(tool_message_ids))
-    return ai_message_ids == tool_message_ids
+def get_tool_calls_diff(messages: list) -> tuple[set, set, set]:
+    """
+    Analyzes tool calls and their responses in messages.
+    
+    Args:
+        messages: List of conversation messages
+        
+    Returns:
+        Tuple of sets containing:
+        - pending_calls: Tool calls waiting for response
+        - completed_calls: Tool calls that got responses
+        - all_calls: All tool call IDs
+    """
+    all_calls = {
+        tool_call['id'] 
+        for m in messages 
+        if isinstance(m, AIMessage) and hasattr(m, 'tool_calls') 
+        for tool_call in m.tool_calls
+    }
+    completed_calls = {
+        m.tool_call_id 
+        for m in messages 
+        if isinstance(m, ToolMessage)
+    }
+    pending_calls = all_calls - completed_calls
+    
+    sep_line('checking tool calls status', symbol='•')
+    log.debug(f'All tool calls: {pretty_repr(all_calls)}')
+    log.debug(f'Completed calls: {pretty_repr(completed_calls)}')
+    log.debug(f'Pending calls: {pretty_repr(pending_calls)}')
+    
+    return pending_calls, completed_calls, all_calls
 
 
 def define_llm(state: State):
@@ -119,7 +170,7 @@ def define_llm(state: State):
     answer = cfg.runtime.define_llm.invoke(prompt).content
 
     if answer not in cfg.models.__dict__.keys():
-        log.error(f'Defining suitable LLM went wrong: for message {state["messages"]['Undefined'][-1].content} was chosen: {answer}. Running "common".')
+        log.error(f'Defining suitable LLM went wrong: for message {state["messages"]["Undefined"][-1].content} was chosen: {answer}. Running "common".')
         answer = 'common'
     else:
         log.debug(f'Defined LLM: {answer}')
@@ -135,9 +186,12 @@ def cut_conversation(state: State) -> dict:
     current_llm = state['llm_to_use']
     cut_history_after = getattr(cfg.models.__dict__[current_llm], "cut_history_after", 10)
     messages_to_cut = state['messages'][current_llm][:cut_history_after]
-    if not all_tool_calls_got_answers(messages=messages_to_cut):
-        log.debug('Some tool calls isn\'t completed, can\'t cut history yet.')
+    
+    pending_calls, _, _ = get_tool_calls_diff(messages=messages_to_cut)
+    if pending_calls:
+        log.debug(f'Found {len(pending_calls)} pending tool calls, can\'t cut history yet.')
         return {}
+        
     delete_messages = [RemoveMessage(id=m.id) for m in messages_to_cut]
     return {
         "path": "cut_conversation",
@@ -147,8 +201,9 @@ def cut_conversation(state: State) -> dict:
 
 def summarize_conversation(state: State) -> dict:
     current_llm = state['llm_to_use']
-    if not all_tool_calls_got_answers(state['messages'][current_llm]):
-        log.debug('Some tool calls isn\'t completed, can\'t summarize yet.')
+    pending_calls, _, _ = get_tool_calls_diff(state['messages'][current_llm])
+    if pending_calls:
+        log.warning(f'Found {len(pending_calls)} pending tool calls, can\'t summarize yet.')
         return {}
 
     summary = state.get('summary', dict()).get(current_llm, "")
@@ -165,7 +220,12 @@ def summarize_conversation(state: State) -> dict:
     messages_prepared = []
     for m in state['messages'][current_llm]:
         if isinstance(m, ToolMessage) and len(m.content) > 100:
-            messages_prepared.append(ToolMessage(content="Skipped tool answer as too big. Assume all is ok here", id = m.id, tool_call_id = m.tool_call_id, name = m.name ))
+            messages_prepared.append(ToolMessage(
+                content="Skipped tool answer as too big. Assume all is ok here", 
+                id=m.id, 
+                tool_call_id=m.tool_call_id, 
+                name=m.name
+            ))
         else:
             messages_prepared.append(m)
 
@@ -180,8 +240,12 @@ def summarize_conversation(state: State) -> dict:
 
     # Checking last 2 messages for not being part of tool call, removing if they are
     for m in state["messages"][current_llm][-2:]:
-        if isinstance(m, ToolMessage) or ( isinstance(m, AIMessage) and hasattr(m, 'tool_calls') and len(m.tool_calls) > 0):
-            delete_messages.append(RemoveMessage(id=m.id))  # pyright: ignore ReportArgumentType
+        if isinstance(m, ToolMessage) or (
+            isinstance(m, AIMessage) and 
+            hasattr(m, 'tool_calls') and 
+            len(m.tool_calls) > 0
+        ):
+            delete_messages.append(RemoveMessage(id=m.id)) # pyright: ignore ReportArgumentType
 
     return {
         "summary": { current_llm: f'\n\n      == Previous conversation summary ==\n{response.content}' },
@@ -201,7 +265,13 @@ class LLMNode:
             self.tools = None
         self.temperature = getattr(llm_config, 'temperature', None)
         self.streaming = getattr(llm_config, 'streaming', False)
-        self.llm = _get_llm(llm_config.model, self.temperature, self.streaming, self.tools)
+        self.llm = _get_llm(
+            model=llm_config.model, 
+            temperature=self.temperature, 
+            streaming=self.streaming, 
+            proxy=llm_config.proxy, 
+            tools=self.tools
+            )
         log.debug(self)
 
     def __call__(self, state: State) -> dict:
@@ -244,14 +314,16 @@ class LLMNode:
             '''
 
 
-def _init_models():
-    define_llm = ChatOpenAI(model=cfg.models._define.model,
+def init_models():
+    define_llm = _get_llm(model=cfg.models._define.model,
                      temperature=cfg.models._define.temperature,
                      streaming=cfg.models._define.streaming,
+                     proxy=cfg.models._define.proxy,
                      )
     cfg.update('runtime.define_llm', define_llm)
-    summarize_llm = ChatOpenAI(model=cfg.models._summarize.model,
+    summarize_llm = _get_llm(model=cfg.models._summarize.model,
                      temperature=cfg.models._summarize.temperature,
                      streaming=cfg.models._summarize.streaming,
+                     proxy=cfg.models._summarize.proxy,
                      )
     cfg.update('runtime.summarize_llm', summarize_llm)

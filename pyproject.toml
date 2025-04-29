@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai_server"
-version = "0.2.2"
+version = "0.3.0"
 description = "AI Server using LangChain and FastAPI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,7 +22,8 @@ dependencies = [
     "langchain-openai",
     "kimiconfig",
     "caldav",
-    "urllib3"
+    "urllib3",
+    "langgraph"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -39,3 +40,7 @@ package-dir = {"" = "src"}
 
 [project.scripts]
 ai_server = "ai_server.main:main"
+
+[tool.uv]
+index-url = "http://kimihome.lan:58080/simple"
+extra-index-url = ["https://pypi.org/simple"]

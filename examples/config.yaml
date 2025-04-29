@@ -15,6 +15,12 @@ llm_api:
   openai:
     base_url: "https://api.openai.com"
     api_key: ".env"
+  aihubmix:
+    base_url: "https://api.aihubmix.com/v1"
+    api_key: ".env"
+  proxyapi:
+    base_url: "https://api.proxyapi.ru/openai"
+    api_key: ".env"
 
 models:
   music_assistant:
@@ -63,7 +69,8 @@ models:
     streaming: false
   _define:
     # model: "gpt-4o"
-    model: "gpt-4o-mini"
+    # model: "gpt-4o-mini"
+    model: "AiHubMix_deepseek-ai/DeepSeek-V3-0324"
     temperature: 0
     streaming: false
 

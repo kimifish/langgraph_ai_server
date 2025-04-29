@@ -4,16 +4,10 @@
 import logging
 import re
 from rich.pretty import pretty_repr
-from rich.theme import Theme
-from rich.traceback import install as install_rich_traceback
-from rich.tree import Tree
 from deepdiff.diff import DeepDiff
-from state import State
-from kimiconfig import Config
+from ai_server.models.state import State
 
-cfg = Config()
-log = logging.getLogger('ai_server.utils')
-install_rich_traceback(show_locals=True)
+log = logging.getLogger(f'{__name__}')
 
 def _log_state(state: State, tabs: int = 0):
     log.debug(pretty_repr(state, indent_size=4, max_string=50))
@@ -72,47 +66,3 @@ def log_diff(dict1, dict2):
                 log.debug(f"{key}:" + pretty_repr(value))
         except AttributeError as e:
             log.error(f'Key {key} does not contain items.')
-
-# ----------------themes
-
-common_theme = Theme({
-    "repr.attrib_name": "khaki3",
-    "repr.attrib_value": "medium_orchid3",
-    "repr.number": "pale_turquoise1",
-    "repr.str": "cadet_blue",
-    "repr.none": "navajo_white3",
-    "repr.bool_true": "medium_spring_green",
-    "repr.bool_false": "light_salmon3",
-    "repr.call": "medium_purple3",
-    "repr.ellipsis": "medium_orchid3",
-    'repr.uuid': "plum4",
-    
-    })
-
-log_theme = Theme({
-    "repr.attrib_name": "khaki3",
-    "repr.attrib_value": "medium_orchid3",
-    "repr.number": "pale_turquoise1",
-    "repr.str": "cadet_blue",
-    "repr.none": "navajo_white3",
-    "repr.bool_true": "medium_spring_green",
-    "repr.bool_false": "light_salmon3",
-    "repr.call": "medium_purple3",
-    "repr.ellipsis": "medium_orchid3",
-    'repr.uuid': "plum4",
-    
-    })
-
-prompt_theme = Theme({
-    "repr.attrib_name": "tan",
-    "repr.attrib_value": "orchid",
-    "repr.number": "pale_turquoise1",
-    "repr.str": "grey63",
-    "repr.none": "navajo_white3",
-    "repr.bool_true": "medium_spring_green",
-    "repr.bool_false": "light_salmon3",
-    "repr.call": "medium_purple3",
-    "repr.ellipsis": "medium_orchid3",
-    'repr.uuid': "plum4",
-    
-    })

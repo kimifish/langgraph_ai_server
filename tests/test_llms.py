@@ -1,8 +1,9 @@
 import unittest
+import logging
 from unittest.mock import patch, MagicMock
-from src.ai_server.llms import _get_llm, define_llm, summarize_conversation, LLMNode, _init_models
-from src.ai_server.state import State
-from src.ai_server.utils import prompt_theme
+from src.ai_server.llms import _get_llm, define_llm, summarize_conversation, LLMNode, init_models
+from ai_server.models.state import State
+from ai_server.logs.themes import prompt_theme
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage, RemoveMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -52,7 +53,7 @@ class TestLLMs(unittest.TestCase):
         self.assertIn("path", result)
 
     def test_init_models(self):
-        _init_models()
+        init_models()
         self.assertIsInstance(self.cfg.runtime.define_llm, BaseChatModel)
         self.assertIsInstance(self.cfg.runtime.summarize_llm, BaseChatModel)
 

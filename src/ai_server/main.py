@@ -1,122 +1,37 @@
 # pyright: basic
 # pyright: reportAttributeAccessIssue=false
 
-import argparse
 import logging
-import os
 import sys
 import time
 import datetime
-import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.graph import Runnable
-from langchain_core.runnables import RunnableConfig
-from kimiconfig import Config
-from pydantic import BaseModel
-from rich.console import Console
-from rich.logging import RichHandler
 from rich.pretty import pretty_repr
-from rich.traceback import install as install_rich_traceback
 from openai import BadRequestError, PermissionDeniedError
 
 from kimiUtils.killer import GracefulKiller
-from tools import _init_tools
-from llms import _init_models
-from graph import _init_graph
-from utils import log_diff, common_theme, log_theme, sep_line
+from ai_server.config import cfg, APP_NAME
+from ai_server.llm_tools import init_tools
+from ai_server.llms import init_models
+from ai_server.graph import init_graph
+from ai_server.logs.utils import log_diff, sep_line
+from ai_server.models.userconfs import UserConfs, UserConf
+from ai_server.history import init_memory
 
-HOME_DIR = os.path.expanduser("~")
-DEFAULT_CONFIG_FILE = os.path.join(os.getenv("XDG_CONFIG_HOME", os.path.join(HOME_DIR, ".config")), "ai_server", "config.yaml")
-PROMPTS_FILE = os.path.join(os.getenv("XDG_CONFIG_HOME", os.path.join(HOME_DIR, ".config")), "ai_server", "prompts.yaml")
-
-load_dotenv()
-
-console = Console(record=True, theme=common_theme)
-log_console = Console(record=True, theme=log_theme)
-
-# Logging setup
-logging.basicConfig(
-    level=logging.NOTSET,
-    format="%(message)s",
-    datefmt="%X",
-    handlers=[RichHandler(console=log_console, markup=True)],
-)
-parent_logger = logging.getLogger("ai_server")
-
-for logger_name in [
-    "uvicorn",
-    "httpx",
-    "markdown_it",
-    "httpcore",
-    "openai._base_client",
-]:
-    logging.getLogger(logger_name).setLevel(logging.WARNING)
-
-log = logging.getLogger("ai_server.main")
-install_rich_traceback(show_locals=True)
-
-# Configuration initialization 
-cfg = Config(use_dataclasses=True)
-cfg.update("runtime.console", console)
-cfg.update("runtime.log_console", log_console)
+log = logging.getLogger(f'{APP_NAME}.{__name__}')
 
 # Initialization of GracefulKiller for proper application termination
 killer = GracefulKiller(kill_targets=[cfg.shutdown])
 
 app = FastAPI(
     title="AI Server",
-    version="0.2.2",
+    version="0.3.0",
     description="Spin up a simple API server using LangChain's Runnable interfaces",
 )
-
-
-class UserConf(BaseModel):
-    thread_id: RunnableConfig
-    user: str = "Undefined"
-    location: str = "Undefined"
-    additional_instructions: str = ""
-    llm_to_use: str = "Undefined"
-    last_used_llm: str = ""
-    last_event: Dict = {}
-    last_answer_time: datetime.datetime = datetime.datetime.now()
-
-
-class UserConfs:
-    def __init__(self):
-        self.user_dict: dict[str, UserConf] = {}
-
-    def add(self, **kwargs) -> UserConf:
-        thread_id = kwargs['thread_id']
-        if isinstance(thread_id, str):
-            kwargs['thread_id'] = RunnableConfig(configurable={"thread_id": thread_id})
-        conf = UserConf(**kwargs)
-        self.user_dict[thread_id] = conf
-        log.debug(self)
-        return conf
-
-    def get(self, thread_id: str) -> Optional[UserConf]:
-        return self.user_dict.get(thread_id)
-
-    def get_all(self) -> dict[str, UserConf]:
-        return self.user_dict
-
-    def exists(self, thread_id: str) -> bool:
-        return thread_id in self.user_dict
-
-    def __str__(self) -> str:
-        result = "UserConfs:\n"
-        for k, v in self.user_dict.items():
-            result += f"{k}: {pretty_repr(v)}\n"
-        return result
-
-
-def _init_memory():
-    cfg.update("runtime.memory", MemorySaver())  # TODO: Change to DB 
 
 
 def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf) -> Dict[str, str]:
@@ -231,11 +146,10 @@ def _create_endpoint(llm: str):
 
 
 def main():
-    _init_logs()
-    _init_models()
-    _init_tools()
-    _init_memory()
-    _init_graph()
+    init_models()
+    init_tools()
+    init_memory()
+    init_graph()
     cfg.update("runtime.mood", "slightly depressed")  # TODO: Nothing here yet.
     cfg.update("runtime.user_confs", UserConfs())
 
@@ -271,56 +185,12 @@ def draw_graph(graph: Runnable):
         print(f"Error drawing graph: {e}")
 
 
-def _init_logs():
-    parent_logger.setLevel(cfg.logging.level)
-
-
-def _parse_args():
-    parser = argparse.ArgumentParser(prog="ai_server", description="AI Server")
-    parser.add_argument(
-        "-c",
-        "--config",
-        dest="config_file",
-        default=DEFAULT_CONFIG_FILE,
-        help="Configuration file location.",
-    )
-    parser.add_argument(
-        "-p",
-        "--prompts",
-        dest="prompts_file",
-        default=PROMPTS_FILE,
-        help="Prompts file location.",
-    )
-    return parser.parse_known_args()
-
-
-def init_config(files: List[str], unknown_args: List[str]):
-    """
-    Initializes the configuration by loading configuration files and passed arguments.
-
-    Args:
-        files (List[str]): List of config files.
-        unknown_args (List[str]): List of arguments (unknown for argparse).
-    """
-    cfg.load_files(files)
-    cfg.load_args(unknown_args)
-
-
 if __name__ == "__main__":
     """
     Entry point for the application. Parses command line arguments,
     initializes the configuration, and runs the main application.
     """
     try:
-        # Parsing known and unknown arguments
-        arguments, unknown_args = _parse_args()
-        
-        # Initialization of the configuration with the provided files and arguments
-        init_config(
-            files=[arguments.config_file, arguments.prompts_file],
-            unknown_args=unknown_args
-        )
-
         # Launching the main function of the application
         sys.exit(main())
     except Exception as e:

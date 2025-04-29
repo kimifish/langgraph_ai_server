@@ -3,18 +3,16 @@
 
 import logging
 import datetime
-from rich.traceback import install as install_rich_traceback
-from kimiconfig import Config
 from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode 
-from state import State, add_path
-from llms import LLMNode, define_llm, summarize_conversation, cut_conversation
-from utils import sep_line, _log_state, pretty_repr
 
-cfg = Config()
-log = logging.getLogger('ai_server.graph')
-install_rich_traceback(show_locals=True)
+from ai_server.config import cfg, APP_NAME
+from ai_server.models.state import State, add_path
+from ai_server.llms import LLMNode, define_llm, summarize_conversation, cut_conversation
+from ai_server.logs.utils import sep_line, _log_state, pretty_repr
+
+log = logging.getLogger(f'{APP_NAME}.{__name__}')
 
 
 def _update_path_in_state(state: State, path_point: str):
@@ -97,12 +95,9 @@ class ModToolNode(ToolNode):
         }
 
 
-def _init_graph():
+def init_graph():
     """Initializes the state graph with nodes and edges based on the configuration."""
-    graph_builder = StateGraph(State)  # TODO Хорошо бы переписать это всё с фабрикой и в циклах, но боюсь потерять читабельность, надо подумать
-
-    # from_START_to_llms_or_define_dict = {'define_llm': 'define_llm'}  # словари условной маршрутизации, наполняем в цикле ниже, потом создаем с ними условные грани
-    # from_define_to_llms_or_final_dict = {'final': 'final'}
+    graph_builder = StateGraph(State)
 
     # Стартовая нода
     graph_builder.add_node('start', StartNode())
@@ -120,9 +115,6 @@ def _init_graph():
         graph_builder.add_node(f'{llm}_tools', ModToolNode(tools=eval(f'cfg.runtime.tools.{llm}'),))  # по ноде тулзов для каждой
         graph_builder.add_conditional_edges(f'{llm}_llm', route_tools, {'tools': f'{llm}_tools', 'final': 'final'})  # по условной грани до тулзов или до финала
         graph_builder.add_edge(f'{llm}_tools', f'{llm}_llm')  # по обратной грани от тулзов до нейронки - без условий
-
-        # from_START_to_llms_or_define_dict[f'{llm}_llm'] = f'{llm}_llm'  #  чтоб два раза не вставать, потребуется ниже
-        # from_define_to_llms_or_final_dict[f'{llm}_llm'] = f'{llm}_llm'
 
     graph_builder.add_conditional_edges('start', route_llms, )  # from_START_to_llms_or_define_dict)  # грани от старта до нейронки, если она известна, иначе define_llm
     graph_builder.add_conditional_edges('define_llm', route_llms, )  # from_define_to_llms_or_final_dict)  # грани от define_llm до сетки или до финала
