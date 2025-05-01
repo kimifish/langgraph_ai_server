@@ -76,24 +76,42 @@ def _upload_playlist_via_ssh(playlist_name: str, content: str, host: str) -> str
     return ""
 
 @tool(parse_docstring=True)
-def get_music_by_tags(tags: str, limit: int = 30, distance: float = 1.2) -> str:
+def get_music_by_tags(
+    tags: str = "", 
+    limit: int = 30, 
+    distance: float = 1.2, 
+    artist: str = "", 
+    album: str = "", 
+    ) -> str:
     """
-    Queries music database for tracks, creates M3U playlist and uploads it to MPD server.
+    Queries music database for tracks using semantic similarity and/or metadata filters, creates M3U playlist and uploads it to MPD server.
 
     Args:
-        tags: Comma-separated list of music tags/descriptions. Tags only in english, artist names - as in original.
+        tags: Comma-separated list of music tags/descriptions for semantic search. Tags only in english, artist names - as in original. Optional.
               Example - "rock, guitar solo, energetic, Сплин" or "ambient, calm, meditation"
-        limit: Maximum number of tracks to return (default: 30)
-        distance: Maximum similarity distance between tags (default: 1.2)
+        limit: Maximum number of tracks to return (default: 30).
+        distance: Maximum cosine distance for semantic matches (default: 1.2). Only applies if 'tags' is provided.
+        artist: Optional filter by artist name.
+        album: Optional filter by album name.
     
     Returns:
         Name of the created playlist (without path) or error message.
         If error occurs, do not retry unless specifically mentioned.
     """
     try:
-        # Prepare the URL with encoded tags
-        encoded_tags = quote(tags)
-        url = f"{cfg.music.music_db.host}:{cfg.music.music_db.port}{cfg.music.music_db.endpoint}/?tags={encoded_tags}&limit={limit}&max_distance={distance}"
+        # Prepare the URL with encoded parameters
+        params = {
+            "tags": tags,
+            "limit": limit,
+            "max_distance": distance,
+            "artist": artist,
+            "album": album,
+        }
+        
+        # Filter out empty parameters
+        query_params = "&".join([f"{key}={quote(str(value))}" for key, value in params.items() if value or key in ["limit", "max_distance"]])
+        
+        url = f"{cfg.music.music_db.host}:{cfg.music.music_db.port}{cfg.music.music_db.endpoint}/?{query_params}"
         
         # Get tracks from music database
         response = requests.get(url)
@@ -101,15 +119,15 @@ def get_music_by_tags(tags: str, limit: int = 30, distance: float = 1.2) -> str:
         tracks = response.json()
         
         if not tracks:
-            return "No tracks found matching these tags. Try different tags or descriptions."
+            return "No tracks found matching these criteria. Try different tags or filters."
 
         # Create playlist name with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_tags = tags.replace(',', '').replace(' ', '_')[:20]  # First 20 chars of tags without spaces and commas
         playlist_name = f"ai_{safe_tags}_{timestamp}.m3u"
         
-        # Create M3U content with explicit line endings
-        m3u_content = "#EXTM3U\n" + "\n".join(tracks) + "\n"
+        # Create M3U content with explicit line endings, extracting file_path
+        m3u_content = "#EXTM3U\n" + "\n".join([track["file_path"] for track in tracks]) + "\n"
         
         try:
             error = _upload_playlist_via_ssh(playlist_name, m3u_content, cfg.music.mpd.host)
@@ -255,3 +273,44 @@ def mpd_control(command: str) -> str:
     except Exception as e:
         log.error(f"Error controlling MPD: {e}")
         return f"Failed to execute command: {str(e)}"
+
+@tool(parse_docstring=True)
+def get_metadata_list(key: str) -> str:
+    """
+    Retrieves a list of unique metadata values from the music database.
+
+    Args:
+        key: Type of metadata to retrieve. Must be one of: "artist", "album", "genre", "year"
+    
+    Returns:
+        String with list of unique values or error message
+    """
+    try:
+        # Validate the key
+        valid_keys = ["artist", "album", "genre", "year"]
+        if key not in valid_keys:
+            return f"Invalid key: {key}. Valid keys are: {', '.join(valid_keys)}"
+        
+        # Construct the URL for the request
+        url = f"{cfg.music.music_db.host}:{cfg.music.music_db.port}/get_metadata_list/?key={key}"
+        
+        # Send request to music database
+        response = requests.get(url)
+        response.raise_for_status()
+        metadata_list = response.json()
+        
+        if not metadata_list:
+            return f"No values found for key '{key}'."
+        
+        # Format the result as a string
+        result = f"List of values for '{key}':\n"
+        result += "\n".join(metadata_list)
+        
+        return result
+        
+    except requests.exceptions.RequestException as e:
+        log.error(f"Error querying music database: {e}")
+        return "Music database is currently unavailable. This is likely a temporary issue. Please try again in a few minutes."
+    except Exception as e:
+        log.error(f"Unexpected error while retrieving metadata list: {e}")
+        return f"An unexpected error occurred: {str(e)}"

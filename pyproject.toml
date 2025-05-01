@@ -23,6 +23,7 @@ dependencies = [
     "kimiconfig",
     "caldav",
     "urllib3",
+    "pymysql",
     "langgraph"
 ]
 classifiers = [

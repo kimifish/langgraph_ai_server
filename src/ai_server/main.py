@@ -148,7 +148,7 @@ def _create_endpoint(llm: str):
 def main():
     init_models()
     init_tools()
-    init_memory()
+    init_memory("mariadb")
     init_graph()
     cfg.update("runtime.mood", "slightly depressed")  # TODO: Nothing here yet.
     cfg.update("runtime.user_confs", UserConfs())

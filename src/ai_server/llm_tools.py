@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 import urllib3
 from ai_server.tools.caldav import add_calendar_event, get_calendar_events
 from ai_server.tools.kimihome import get_items, send_command
-from ai_server.tools.music import get_music_by_tags, play_playlist, mpd_control
+from ai_server.tools.music import get_music_by_tags, play_playlist, mpd_control, get_metadata_list
 
 from ai_server.config import cfg, APP_NAME
 log = logging.getLogger(f'{APP_NAME}.{__name__}')
@@ -34,9 +34,10 @@ def init_tools():
     # Define tool lists for different assistants
     music_tools_list = [
         get_music_by_tags,
+        get_metadata_list,
         # create_playlist,
-        play_playlist,    # Added new MPD tools
-        mpd_control,      # Added new MPD tools
+        play_playlist,
+        mpd_control,
         get_current_datetime,
     ]
     
