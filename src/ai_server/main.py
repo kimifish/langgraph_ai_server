@@ -9,7 +9,7 @@ from typing import Dict, Optional
 
 from fastapi import FastAPI
 from langchain_core.messages import HumanMessage
-from langgraph.graph.graph import Runnable
+from langchain_core.runnables.base import Runnable
 from rich.pretty import pretty_repr
 from openai import BadRequestError, PermissionDeniedError
 
@@ -34,7 +34,7 @@ app = FastAPI(
 )
 
 
-def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf) -> Dict[str, str]:
+async def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf) -> Dict[str, str]:
     sep_line("START")
 
     messages = []
@@ -43,7 +43,7 @@ def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf) -> Di
 
     answer = dict()
     try:
-        for event in graph.stream(
+        async for event in graph.astream(
             {
                 "messages": {userconf.llm_to_use: messages},
                 "user": userconf.user,
@@ -98,7 +98,7 @@ def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf) -> Di
 # Function to create endpoints dynamically
 def _create_endpoint(llm: str):
     @app.get(f"/{llm}")
-    def read_item(
+    async def read_item(
         message: str = "Hello, world!",
         thread_id: Optional[str] = "",
         user: str = "Undefined",
@@ -135,7 +135,7 @@ def _create_endpoint(llm: str):
             )
         )
         log.info(f"New message from {user} to /{llm}: [light_sky_blue3]{message}[/]")
-        answer = get_graph_answer(
+        answer = await get_graph_answer(
             graph=cfg.runtime.graph,
             user_input=message,
             userconf=userconf,
@@ -148,7 +148,8 @@ def _create_endpoint(llm: str):
 def main():
     init_models()
     init_tools()
-    init_memory("mariadb")
+    # init_memory("mariadb")  # TODO: mysql saver doesn't work with async. Some methods must be implemented there.
+    init_memory()
     init_graph()
     cfg.update("runtime.mood", "slightly depressed")  # TODO: Nothing here yet.
     cfg.update("runtime.user_confs", UserConfs())

@@ -28,8 +28,9 @@ def _get_llm(
     temperature: float|None = None, 
     streaming: bool=False, 
     proxy: str|None = None,
-    tools: list|None = None
+    tools: list|None = None,
     ) -> BaseChatModel|Runnable|None:
+
     llm: BaseChatModel|Runnable|None = None
 
     args = {
@@ -265,6 +266,10 @@ class LLMNode:
             self.tools = None
         self.temperature = getattr(llm_config, 'temperature', None)
         self.streaming = getattr(llm_config, 'streaming', False)
+
+        # Whether LLM uses history of conversations with all agents, or just personal scope.
+        self.messages_addr = '_common_history' if getattr(llm_config, 'use_common_history', False) else self.name
+
         self.llm = _get_llm(
             model=llm_config.model, 
             temperature=self.temperature, 
@@ -296,13 +301,13 @@ class LLMNode:
                 'location': _get_location_desc(state['location']),
                 'summary': state.get('summary', dict()).get(self.name, ''),
                 'additional_instructions': state['additional_instructions'],
-                'conversation': state['messages'][self.name]  #[1:],
+                'conversation': state['messages'][self.messages_addr]
             }
         )
         log.debug(f'Prompt: {pretty_repr(prompt, max_depth=4, max_string=100)}')
         answer = self.llm.invoke(prompt)
         return {
-                "messages": {self.name: answer},
+                "messages": {self.messages_addr: answer},
                 "path": self.name,
         }
     

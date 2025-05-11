@@ -24,7 +24,16 @@ dependencies = [
     "caldav",
     "urllib3",
     "pymysql",
-    "langgraph"
+    "langgraph",
+    "langchain-mcp-adapters>=0.0.11",
+    "langchain>=0.3.25",
+    "langchain-community>=0.3.23",
+    "python-mpd2>=3.1.1",
+    "paramiko>=3.5.1",
+    "chromadb-client>=1.0.8",
+    "deepdiff>=8.5.0",
+    "langgraph-checkpoint>=2.0.25",
+    "langgraph-checkpoint-mysql>=2.0.15",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

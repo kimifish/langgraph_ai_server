@@ -5,6 +5,7 @@
 import requests
 import logging
 from langchain_core.tools import tool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from ai_server.config import cfg, APP_NAME
 log = logging.getLogger(f'{APP_NAME}.{__name__}')
