@@ -82,17 +82,27 @@ class ModToolNode(ToolNode):
     Methods:
         invoke(input, config=None, **kwargs): Invokes the tool with the given input and logs the result.
     """
-    def invoke(self, input, config=None, **kwargs):
+    async def ainvoke(self, input, config=None, **kwargs):
         # Replacing messages dict with current LLM's list of messages for this specific tool
-        input['messages'] = input['messages'][input['llm_to_use']]
+        current_llm = input['llm_to_use']
+        input['messages'] = input['messages'][current_llm]
         # log.debug(f'Tool Input: {pretty_repr(input)}')
-        result = super().invoke(input, config, **kwargs)
+        result = await super().ainvoke(input, config, **kwargs)
         log.debug("Tool Result:" + pretty_repr(result, max_string=200))
         # Placing result tool message back to a specific branch of llm's messages
-        return {
-            'messages': { input['llm_to_use']: result['messages'] }, 
+        return_values = {
+            'messages': { current_llm: result['messages'] }, 
             "path": "tool",
         }
+
+        # If current model shares conversation, add it to all models, who use common.
+        if getattr(cfg.models, input['llm_to_use']).history.post_to_common:
+            for name, model in vars(cfg.models).items():
+                if model.history.use_common and name != current_llm:
+                    return_values["messages"].update({name: result['messages']})
+            # return_values["messages"].update({'common': result['messages']})
+
+        return return_values
 
 
 def init_graph():
@@ -202,11 +212,11 @@ def route_shorten_history(state: State):
     current_llm = state['llm_to_use']
     messages = state["messages"][current_llm]
 
-    cut_history_after = getattr(cfg.models.__dict__[current_llm], "cut_history_after", 10)
+    cut_history_after = getattr(cfg.models.__dict__[current_llm].history, "cut_after", 10)
     if cut_history_after > 0 and len(messages) > cut_history_after:
         return "cut_conversation"
 
-    summarize_history_after = getattr(cfg.models.__dict__[current_llm], "summarize_history_after", 0)
+    summarize_history_after = getattr(cfg.models.__dict__[current_llm].history, "summarize_after", 0)
     if summarize_history_after > 0 and len(messages) > summarize_history_after:
         return "summarize_conversation"
 

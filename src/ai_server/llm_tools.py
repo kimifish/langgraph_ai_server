@@ -2,7 +2,10 @@
 # pyright: reportAttributeAccessIssue=false
 
 from datetime import datetime
+from rich.pretty import pretty_repr
+from dataclasses import asdict
 from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_mcp_adapters.client import MultiServerMCPClient
 import logging
 from langchain_core.tools import tool
 import urllib3
@@ -42,8 +45,8 @@ def init_tools():
     ]
     
     smarthome_tools_list = [
-        send_command,
-        get_items,
+        # send_command,
+        # get_items,
         add_calendar_event,
         get_calendar_events,
         get_current_datetime,
@@ -59,6 +62,23 @@ def init_tools():
         'music_assistant': music_tools_list,
         'music_machine': [tavily_search],
     })
+
+async def init_mcp_tools(client: MultiServerMCPClient):
+        # tools = client.get_tools()
+        # log.debug(pretty_repr(tools))
+        tools_list: dict = asdict(cfg.runtime.tools)
+
+        for name, mcp_list in client.server_name_to_tools.items():
+            if name in tools_list.keys() and isinstance(tools_list[name], list):
+                tools_list[name] += mcp_list
+            else:
+                tools_list[name] = mcp_list
+
+        cfg.update('runtime.tools', tools_list)
+        # log.debug(cfg.format_attributes())
+
+async def init_mcp_sources(client: MultiServerMCPClient):
+    pass
 
 
 if __name__ == '__main__':

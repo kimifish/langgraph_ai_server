@@ -60,6 +60,7 @@ class State(TypedDict):
     additional_instructions: str
     llm_to_use: str
     last_used_llm: str
+    last_messages: Dict
     thread_id: str
     path: Annotated[list, add_path]
     summary: Annotated[ dict, add_summary]

@@ -146,31 +146,42 @@ def _update_env_values():
     _process_dict(cfg.data)
 
 
-def _ensure_model_proxies():
-    """Ensure each model has a proxy field.
-    
-    Checks each model configuration and adds a proxy field with value None if it doesn't exist.
-    """
-    if not hasattr(cfg, 'models'):
-        log.warning("No models configuration found")
-        return
-        
-    for model_name, model_config in cfg.models.__dict__.items():
-        if not hasattr(model_config, 'proxy'):
-            cfg.update(f'models.{model_name}.proxy', None)
-            log.debug(f"Added proxy=None to model {model_name}")
-
-
 # Load config and compile patterns
 args, unknown = _parse_args()
 cfg.load_files([args.config_file, args.prompts_file])
 cfg.load_args(unknown)
 
+cfg.validate_config([
+    'server.listen_interfaces',
+    'server.listen_port',
+
+    'models.%.model',
+    'models.%.history',
+
+    ('models.%.streaming', False),
+    ('models.%.temperature', None),
+    ('models.%.proxy', ""),
+    ('models.%.history.cut_after', 10),
+    ('models.%.history.summarize_after', 0),
+    ('models.%.history.use_common', False),
+    ('models.%.history.post_to_common', False),
+
+    ('endpoints.auto', 'ai'),
+
+    'llm_api.%.base_url',
+    ('llm_api.%.api_key', '.env'),
+
+    ('logging.debug.events', False),
+    ('logging.debug.prompts', False),
+    ('logging.debug.messages_diff', False),
+    ('logging.debug.llm_init', False),
+])
+
 # Update all .env values with environment variables
 _update_env_values()
 
 # Ensure all models have proxy field
-_ensure_model_proxies()
+# _ensure_model_proxies()
 
 cfg.update('runtime.console', console)
 cfg.update("runtime.log_console", log_console)

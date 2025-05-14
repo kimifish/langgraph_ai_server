@@ -14,7 +14,7 @@ from rich.pretty import pretty_repr
 
 from ai_server.config import cfg, APP_NAME
 from ai_server.models.state import State
-from ai_server.logs.utils import sep_line
+from ai_server.logs.utils import clean_structure, sep_line, log_diff
 from ai_server.logs.themes import prompt_theme
 
 prompt_console = Console(record=True, theme=prompt_theme)
@@ -147,8 +147,6 @@ def get_tool_calls_diff(messages: list) -> tuple[set, set, set]:
 
 
 def define_llm(state: State):
-    log.debug("define_llm")
-
     prompt_template = ChatPromptTemplate(
         [
             ('system', cfg.prompts.define_llm),
@@ -162,30 +160,39 @@ def define_llm(state: State):
     else:
         addition_to_prompt = ''
 
+    message_to_define = [state['messages']['Undefined'][-1]]
     prompt = prompt_template.invoke(
         {
             'last_used_llm': addition_to_prompt,
-            'message_to_define': [state['messages']['Undefined'][-1]],
+            'message_to_define': message_to_define,
         }
     )
     answer = cfg.runtime.define_llm.invoke(prompt).content
 
     if answer not in cfg.models.__dict__.keys():
-        log.error(f'Defining suitable LLM went wrong: for message {state["messages"]["Undefined"][-1].content} was chosen: {answer}. Running "common".')
+        log.error(f'Defining suitable LLM went wrong: for message {message_to_define.content} was chosen: {answer}. Running "common".')
         answer = 'common'
     else:
         log.debug(f'Defined LLM: {answer}')
 
-    return {
+    return_values = {
         "llm_to_use": answer,
-        "messages": { answer: [state['messages']['Undefined'][-1]] },
+        "messages": { answer: message_to_define },
         "path": "define_llm",
     }
+
+    # If answer is for all LLMs, adding it to all, who uses common
+    if getattr(cfg.models, answer).history.post_to_common:
+        for name, model in vars(cfg.models).items():
+            if model.history.use_common and name != answer:
+                return_values["messages"].update({name: message_to_define})
+
+    return return_values
 
 
 def cut_conversation(state: State) -> dict:
     current_llm = state['llm_to_use']
-    cut_history_after = getattr(cfg.models.__dict__[current_llm], "cut_history_after", 10)
+    cut_history_after = getattr(cfg.models.__dict__[current_llm].history, "cut_after", 10)
     messages_to_cut = state['messages'][current_llm][:cut_history_after]
     
     pending_calls, _, _ = get_tool_calls_diff(messages=messages_to_cut)
@@ -213,7 +220,7 @@ def summarize_conversation(state: State) -> dict:
         # to summarize it than if one didn't
         summary_message = (
             f"This is summary of the conversation to date: {summary}\n\n"
-            "Extend the summary by taking into account the new messages above:"
+            "Extend the summary by taking into account the new messages above."
         )
     else:
         summary_message = "Create a summary of the conversation above:"
@@ -258,33 +265,40 @@ def summarize_conversation(state: State) -> dict:
 class LLMNode:
     def __init__(self, name: str):
         self.name = name
-        self.prompt_text = eval(f'cfg.prompts.{name}')
-        llm_config = eval(f'cfg.models.{name}')
+        self.prompt_text = getattr(cfg.prompts, name, "You are smart qualified personal assistant. Answer all questions frankly.")
+        # if name == 'summarize_llm':
+        #     self.specific_
+        self.config = getattr(cfg.models, name)
         try:
-            self.tools: list|None = eval(f'cfg.runtime.tools.{name}')
+            self.tools: list|None = getattr(cfg.runtime.tools, name)
         except:
             self.tools = None
-        self.temperature = getattr(llm_config, 'temperature', None)
-        self.streaming = getattr(llm_config, 'streaming', False)
-
-        # Whether LLM uses history of conversations with all agents, or just personal scope.
-        self.messages_addr = '_common_history' if getattr(llm_config, 'use_common_history', False) else self.name
+        
+        if self.config.proxy:
+            self.proxy = getattr(cfg.proxies, self.config.proxy)
+        else:
+            self.proxy = ""
+        log.debug(f"{self.name} - {self.config.model} - {self.proxy}")
 
         self.llm = _get_llm(
-            model=llm_config.model, 
-            temperature=self.temperature, 
-            streaming=self.streaming, 
-            proxy=llm_config.proxy, 
+            model=self.config.model, 
+            temperature=self.config.temperature, 
+            streaming=self.config.streaming, 
+            proxy=self.proxy, 
             tools=self.tools
             )
-        log.debug(self)
 
-    def __call__(self, state: State) -> dict:
-        log.debug(f'{self.name}_llm')
+        if cfg.logging.debug.llm_init:
+            log.debug(self)
 
+    async def __call__(self, state: State) -> dict:
         if not self.llm:
             log.error(f'Model "{self.name}" was not created thus not called. Skipping.')
             return { "path": self.name }
+        
+        # log.debug(pretty_repr(state['messages']))
+        if cfg.logging.debug.messages_diff:
+            log_diff(state.get('last_messages', []), state['messages'])
 
         prompt_template = ChatPromptTemplate(
             [
@@ -292,7 +306,7 @@ class LLMNode:
                 ('placeholder', '{conversation}'),
             ]
         )
-        # messages = summarize_prev_history(state['messages'])
+
         prompt = prompt_template.invoke(
             {
                 'mood': cfg.runtime.mood,
@@ -301,22 +315,39 @@ class LLMNode:
                 'location': _get_location_desc(state['location']),
                 'summary': state.get('summary', dict()).get(self.name, ''),
                 'additional_instructions': state['additional_instructions'],
-                'conversation': state['messages'][self.messages_addr]
+                'conversation': state['messages'].get(self.name, [])
             }
         )
-        log.debug(f'Prompt: {pretty_repr(prompt, max_depth=4, max_string=100)}')
-        answer = self.llm.invoke(prompt)
-        return {
-                "messages": {self.messages_addr: answer},
+        if cfg.logging.debug.prompts:
+            log.debug(f'Prompt: {pretty_repr(clean_structure(prompt, ['.*metadata']), max_depth=3, max_string=100)}')
+
+        log.debug(pretty_repr(clean_structure(state['messages']), max_depth=5, max_string=100))
+        # log.debug(pretty_repr(state['messages'], max_depth=3, max_string=100))
+        answer = await self.llm.ainvoke(prompt)
+
+        return_values = {
+                "messages": {self.name: answer},
                 "path": self.name,
         }
+
+        # If answer is for all LLMs, adding it to all, who uses common
+        if self.config.history.post_to_common:
+            for name, model in vars(cfg.models).items():
+                if model.history.use_common and name != self.name:
+                    return_values["messages"].update({name: answer})
+
+        if cfg.logging.debug.messages_diff:
+            return_values["last_messages"] = state['messages']
+
+        return return_values
     
     def __repr__(self) -> str:
         return f'''LLM Node: \n
                 name: {self.name}, \n
-                llm: {pretty_repr(self.llm)}, \n
-                tools: {pretty_repr(self.tools)}. \n
+                prompt_text: {pretty_repr(self.prompt_text, max_string=200)}, \n
+                llm: {pretty_repr(self.llm, max_depth=3)}, \n
             '''
+                # tools: {pretty_repr(self.tools)}. \n
 
 
 def init_models():

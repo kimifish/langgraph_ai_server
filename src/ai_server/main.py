@@ -3,19 +3,22 @@
 
 import logging
 import sys
+import anyio
 import time
 import datetime
+import uvicorn
 from typing import Dict, Optional
-
+from dataclasses import asdict
 from fastapi import FastAPI
-from langchain_core.messages import HumanMessage
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.runnables.base import Runnable
 from rich.pretty import pretty_repr
 from openai import BadRequestError, PermissionDeniedError
 
 from kimiUtils.killer import GracefulKiller
 from ai_server.config import cfg, APP_NAME
-from ai_server.llm_tools import init_tools
+from ai_server.llm_tools import init_tools, init_mcp_tools
 from ai_server.llms import init_models
 from ai_server.graph import init_graph
 from ai_server.logs.utils import log_diff, sep_line
@@ -43,24 +46,40 @@ async def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf)
 
     answer = dict()
     try:
+        graph_init_values = {
+            "messages": {userconf.llm_to_use: messages},
+            "user": userconf.user,
+            "location": userconf.location,
+            "additional_instructions": userconf.additional_instructions,
+            "llm_to_use": userconf.llm_to_use,
+            "last_used_llm": userconf.last_used_llm,
+            "thread_id": userconf.thread_id,
+        }
+
+        # Adding human message to all llms that use public conversation also.
+        # if getattr(cfg.models, userconf.llm_to_use, False) and \
+        #     getattr(cfg.models, userconf.llm_to_use).history.post_to_common:
+        #     for name, model in vars(cfg.models).items():
+        #         if model.history.use_common and name != userconf.llm_to_use:
+        #             graph_init_values["messages"].update({name: messages})
+        # log.debug(pretty_repr(graph_init_values))
+
         async for event in graph.astream(
-            {
-                "messages": {userconf.llm_to_use: messages},
-                "user": userconf.user,
-                "location": userconf.location,
-                "additional_instructions": userconf.additional_instructions,
-                "llm_to_use": userconf.llm_to_use,
-                "last_used_llm": userconf.last_used_llm,
-                "thread_id": userconf.thread_id,
-            },
+            graph_init_values,
             userconf.thread_id,
             stream_mode="values",
         ):
-            log_diff(userconf.last_event, event)
-            userconf.last_event = event
+
+            if cfg.logging.debug.events:
+                log_diff(userconf.last_event, event)
+                userconf.last_event = event
+
             next_state = graph.get_state(userconf.thread_id).next
             next_state = next_state[-1] if next_state else "END"
             sep_line(next_state)
+            # last_message: BaseMessage = event["messages"][event["llm_to_use"]][-1]
+            # if isinstance(last_message, AIMessage):
+            #     answer["answer"] = last_message.content
             if next_state == 'END':
                 answer["answer"] = event["messages"][event["llm_to_use"]][-1].content
                 userconf.last_used_llm = event["llm_to_use"]  # Value will be used in future requests for more relevant llm autodetection
@@ -78,7 +97,8 @@ async def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf)
         log.error(f"Something wrong with answer forming: \nLast state: {pretty_repr(event)}. \nError: {e}")
         answer["error"] = "Malformed answer"
         answer["answer"] = ""
-    except Exception as e:
+    # except Exception as e:
+    except NotImplementedError as e:
         log.error(f"Unrecognized error (graph chain couldn't reach END): \nLast state: {pretty_repr(event)}. \nError: {e}")
         answer["error"] = "Unknown error"
         answer["answer"] = ""
@@ -145,31 +165,12 @@ def _create_endpoint(llm: str):
     return read_item
 
 
-def main():
-    init_models()
-    init_tools()
-    # init_memory("mariadb")  # TODO: mysql saver doesn't work with async. Some methods must be implemented there.
-    init_memory()
-    init_graph()
-    cfg.update("runtime.mood", "slightly depressed")  # TODO: Nothing here yet.
-    cfg.update("runtime.user_confs", UserConfs())
-
-    import uvicorn
-
-    # Creating API endpoints
-    # endpoints = [await _create_endpoint(llm) for llm in [*cfg.models.__dict__.keys(), cfg.endpoints.auto] if not llm.startswith('_') else continue]
-
-
-    endpoints = list()
-    for llm in [*cfg.models.__dict__.keys(), cfg.endpoints.auto]:
-        if llm.startswith('_'):
-            continue
-        endpoints.append(_create_endpoint(llm))
-
-    uvicorn.run(
+def get_uvicorn() -> uvicorn.Server:
+    uv_config = uvicorn.Config(
         app,
         host=cfg.server.listen_interfaces,
         port=cfg.server.listen_port,
+        log_level=cfg.logging.level.lower(),
         # workers=1,
         # log_config=log_config,
         # lifespan=lifespan,
@@ -177,6 +178,43 @@ def main():
         # ssl_certfile="cert.pem",
         # reload=True,                  # auto reload if code changed
     )
+    uv_server = uvicorn.Server(uv_config)
+    return uv_server
+
+
+async def main():
+    async with MultiServerMCPClient(asdict(cfg.mcp)) as mcp_client:
+
+        #1. Initializing routing ans summarizing LLMs
+        init_models()
+
+        #2. Initializing static tools.
+        init_tools()
+
+        #3. Initializing MCP tools (using context)
+        await init_mcp_tools(mcp_client)
+
+        #4. Initializing Memory
+        init_memory()
+        # init_memory("mariadb")  # TODO: mysql saver doesn't work with async. Some methods must be implemented there.
+        
+        #5. Building and compiling graph with all nodes and routes.
+        init_graph()
+
+        #6. Some minor settings
+        cfg.update("runtime.mood", "slightly depressed")  # TODO: Nothing here yet.
+        cfg.update("runtime.user_confs", UserConfs())
+
+        #7. Creating API endpoints
+        endpoints = list()
+        for llm in [*cfg.models.__dict__.keys(), cfg.endpoints.auto]:
+            if llm.startswith('_'):
+                continue
+            endpoints.append(_create_endpoint(llm))
+        
+        #8. Starting web server
+        await get_uvicorn().serve()
+
 
 
 def draw_graph(graph: Runnable):
@@ -185,15 +223,32 @@ def draw_graph(graph: Runnable):
     except Exception as e:
         print(f"Error drawing graph: {e}")
 
-
-if __name__ == "__main__":
+def run():
     """
     Entry point for the application. Parses command line arguments,
     initializes the configuration, and runs the main application.
     """
     try:
         # Launching the main function of the application
-        sys.exit(main())
-    except Exception as e:
+        anyio.run(main)
+
+        # log.debug(pretty_repr(cfg.runtime.tools))
+        # uvicorn.run(
+        #     app,
+        #     host=cfg.server.listen_interfaces,
+        #     port=cfg.server.listen_port,
+        #     # workers=1,
+        #     # log_config=log_config,
+        #     # lifespan=lifespan,
+        #     # ssl_keyfile="key.pem",        # HTTPS
+        #     # ssl_certfile="cert.pem",
+        #     # reload=True,                  # auto reload if code changed
+        # )
+    # except Exception as e:
+    except NotImplementedError as e:
         log.error(f"Unexpected error: {e}")
         sys.exit(1)
+
+if __name__ == "__main__":
+    run()
+    
