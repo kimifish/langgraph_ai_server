@@ -52,8 +52,8 @@ class TestLLMs(unittest.TestCase):
         self.assertIn("messages", result)
         self.assertIn("path", result)
 
-    def test_init_models(self):
-        init_models()
+    def test_init_agents(self):
+        init_agents()
         self.assertIsInstance(self.cfg.runtime.define_llm, BaseChatModel)
         self.assertIsInstance(self.cfg.runtime.summarize_llm, BaseChatModel)
 

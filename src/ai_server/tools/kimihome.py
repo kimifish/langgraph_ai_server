@@ -11,41 +11,41 @@ from ai_server.config import cfg, APP_NAME
 log = logging.getLogger(f'{APP_NAME}.{__name__}')
 
 
-@tool(parse_docstring=True)
-def get_items(categories: str) -> list:
-    """
-    Возвращает json-список устройств(item), их описаний(label) и текущих состояний(state).
+# @tool(parse_docstring=True)
+# def get_items(categories: str) -> list:
+#     """
+#     Возвращает json-список устройств(item), их описаний(label) и текущих состояний(state).
 
-    Args:
-        categories: A comma-separated list of tags to filter items by.
-        Possible values are 'Light' - for illumination,
-                         'Sensors' - for doors, windows state,
-                         'Weather' - for weather,
-                         'Battery' - for battery state,
-                         'Terminals' - for computer terminals state,
-                         'TV' - for TV state,
-                         'HVAC' - for managing heating, watering, temperature and humidity sensors.
-    """
-    log.debug(f'Executing get_items with command "{categories}"')
+#     Args:
+#         categories: A comma-separated list of tags to filter items by.
+#         Possible values are 'Light' - for illumination,
+#                          'Sensors' - for doors, windows state,
+#                          'Weather' - for weather,
+#                          'Battery' - for battery state,
+#                          'Terminals' - for computer terminals state,
+#                          'TV' - for TV state,
+#                          'HVAC' - for managing heating, watering, temperature and humidity sensors.
+#     """
+#     log.debug(f'Executing get_items with command "{categories}"')
     
-    final_list = list()
-    for tag in categories.split(','):
-        payload = {'tags': f'Ai_{tag}',
-                   'metadata': '.*',
-                   'recursive': 'false',
-                   'fields': 'type,name,label,state',
-                   'staticDataOnly': 'false',
-                   }
-        headers = {'accept': 'application/json'}
+#     final_list = list()
+#     for tag in categories.split(','):
+#         payload = {'tags': f'Ai_{tag}',
+#                    'metadata': '.*',
+#                    'recursive': 'false',
+#                    'fields': 'type,name,label,state',
+#                    'staticDataOnly': 'false',
+#                    }
+#         headers = {'accept': 'application/json'}
         
-        resp = requests.get(cfg.openhab.api_url,
-                          headers=headers,
-                          params=payload,
-                          ).json()
-        if len(resp) > 0:
-            final_list.extend(resp)
+#         resp = requests.get(cfg.openhab.api_url,
+#                           headers=headers,
+#                           params=payload,
+#                           ).json()
+#         if len(resp) > 0:
+#             final_list.extend(resp)
             
-    return final_list
+#     return final_list
 
 @tool(parse_docstring=True)
 def send_command(item: str, command: str) -> bool:

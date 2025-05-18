@@ -22,7 +22,7 @@ llm_api:
     base_url: "https://api.proxyapi.ru/openai"
     api_key: ".env"
 
-models:
+agents:
   music_assistant:
     model: "gpt-4o"
     temperature: 0.2

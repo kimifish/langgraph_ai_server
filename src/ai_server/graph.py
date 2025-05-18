@@ -76,6 +76,8 @@ class FinalNode:
 
 
 class ModToolNode(ToolNode):
+    def __init__(self, tools, *, name = "tools", tags = None, handle_tool_errors = True, messages_key = "messages"):
+        super().__init__(tools, name=name, tags=tags, handle_tool_errors=handle_tool_errors, messages_key=messages_key)
     """
     Represents a modified tool node that processes input and invokes the tool.
 
@@ -95,9 +97,9 @@ class ModToolNode(ToolNode):
             "path": "tool",
         }
 
-        # If current model shares conversation, add it to all models, who use common.
-        if getattr(cfg.models, input['llm_to_use']).history.post_to_common:
-            for name, model in vars(cfg.models).items():
+        # If current model shares conversation, add it to all agents, who use common.
+        if getattr(cfg.agents, input['llm_to_use']).history.post_to_common:
+            for name, model in vars(cfg.agents).items():
                 if model.history.use_common and name != current_llm:
                     return_values["messages"].update({name: result['messages']})
             # return_values["messages"].update({'common': result['messages']})
@@ -116,9 +118,9 @@ def init_graph():
     # Нода-распределитель нейронок
     graph_builder.add_node('define_llm', define_llm)
     
-    # Берем имена 2 уровня раздела models в конфиге
+    # Берем имена 2 уровня раздела agents в конфиге
     # и создаем по узлу для каждой нейронки
-    for llm in cfg.models.__dict__.keys():
+    for llm in cfg.agents.__dict__.keys():
         if llm.startswith('_'):
             continue
         graph_builder.add_node(f'{llm}_llm', LLMNode(llm))  # по ноде для каждой нейронки
@@ -163,7 +165,7 @@ def route_llms(state: State) -> str:
     _update_path_in_state(state, 'route_llms')
 
     if llm_to_use := state.get('llm_to_use'):
-        if llm_to_use in cfg.models.__dict__.keys() and not llm_to_use.startswith('_'):
+        if llm_to_use in cfg.agents.__dict__.keys() and not llm_to_use.startswith('_'):
             dest = llm_to_use + '_llm'
         else:
             dest = 'define_llm'
@@ -212,11 +214,11 @@ def route_shorten_history(state: State):
     current_llm = state['llm_to_use']
     messages = state["messages"][current_llm]
 
-    cut_history_after = getattr(cfg.models.__dict__[current_llm].history, "cut_after", 10)
+    cut_history_after = getattr(cfg.agents.__dict__[current_llm].history, "cut_after", 10)
     if cut_history_after > 0 and len(messages) > cut_history_after:
         return "cut_conversation"
 
-    summarize_history_after = getattr(cfg.models.__dict__[current_llm].history, "summarize_after", 0)
+    summarize_history_after = getattr(cfg.agents.__dict__[current_llm].history, "summarize_after", 0)
     if summarize_history_after > 0 and len(messages) > summarize_history_after:
         return "summarize_conversation"
 

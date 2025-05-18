@@ -18,8 +18,8 @@ from openai import BadRequestError, PermissionDeniedError
 
 from kimiUtils.killer import GracefulKiller
 from ai_server.config import cfg, APP_NAME
-from ai_server.llm_tools import init_tools, init_mcp_tools
-from ai_server.llms import init_models
+from ai_server.llm_tools import init_tools, init_mcp_tools, init_mcp_resources
+from ai_server.llms import init_agents
 from ai_server.graph import init_graph
 from ai_server.logs.utils import log_diff, sep_line
 from ai_server.models.userconfs import UserConfs, UserConf
@@ -57,9 +57,9 @@ async def get_graph_answer(graph: Runnable, user_input: str, userconf: UserConf)
         }
 
         # Adding human message to all llms that use public conversation also.
-        # if getattr(cfg.models, userconf.llm_to_use, False) and \
-        #     getattr(cfg.models, userconf.llm_to_use).history.post_to_common:
-        #     for name, model in vars(cfg.models).items():
+        # if getattr(cfg.agents, userconf.llm_to_use, False) and \
+        #     getattr(cfg.agents, userconf.llm_to_use).history.post_to_common:
+        #     for name, model in vars(cfg.agents).items():
         #         if model.history.use_common and name != userconf.llm_to_use:
         #             graph_init_values["messages"].update({name: messages})
         # log.debug(pretty_repr(graph_init_values))
@@ -129,7 +129,7 @@ def _create_endpoint(llm: str):
         user_confs: UserConfs = cfg.runtime.user_confs
         userconf = user_confs.get(thread_id) if thread_id else None
 
-        if llm_to_use not in cfg.models.__dict__.keys():
+        if llm_to_use not in cfg.agents.__dict__.keys():
             llm_to_use = "Undefined"
 
         if not userconf:
@@ -184,15 +184,17 @@ def get_uvicorn() -> uvicorn.Server:
 
 async def main():
     async with MultiServerMCPClient(asdict(cfg.mcp)) as mcp_client:
+        # mcp_client = MultiServerMCPClient(asdict(cfg.mcp)) 
 
         #1. Initializing routing ans summarizing LLMs
-        init_models()
+        init_agents()
 
         #2. Initializing static tools.
         init_tools()
 
         #3. Initializing MCP tools (using context)
         await init_mcp_tools(mcp_client)
+        await init_mcp_resources(mcp_client)
 
         #4. Initializing Memory
         init_memory()
@@ -207,11 +209,12 @@ async def main():
 
         #7. Creating API endpoints
         endpoints = list()
-        for llm in [*cfg.models.__dict__.keys(), cfg.endpoints.auto]:
+        for llm in [*cfg.agents.__dict__.keys(), cfg.endpoints.auto]:
             if llm.startswith('_'):
                 continue
             endpoints.append(_create_endpoint(llm))
         
+        log.debug(cfg.format_attributes())
         #8. Starting web server
         await get_uvicorn().serve()
 

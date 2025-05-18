@@ -60,4 +60,5 @@ extra-index-url = ["https://pypi.org/simple"]
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
+    "jsonrpcclient[requests]>=4.0.3",
 ]

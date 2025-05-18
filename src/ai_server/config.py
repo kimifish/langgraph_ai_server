@@ -155,16 +155,17 @@ cfg.validate_config([
     'server.listen_interfaces',
     'server.listen_port',
 
-    'models.%.model',
-    'models.%.history',
+    'agents.%.model',
+    'agents.%.history',
 
-    ('models.%.streaming', False),
-    ('models.%.temperature', None),
-    ('models.%.proxy', ""),
-    ('models.%.history.cut_after', 10),
-    ('models.%.history.summarize_after', 0),
-    ('models.%.history.use_common', False),
-    ('models.%.history.post_to_common', False),
+    ('agents.%.resources', []),
+    ('agents.%.streaming', False),
+    ('agents.%.temperature', None),
+    ('agents.%.proxy', ""),
+    ('agents.%.history.cut_after', 10),
+    ('agents.%.history.summarize_after', 0),
+    ('agents.%.history.use_common', False),
+    ('agents.%.history.post_to_common', False),
 
     ('endpoints.auto', 'ai'),
 
@@ -180,7 +181,7 @@ cfg.validate_config([
 # Update all .env values with environment variables
 _update_env_values()
 
-# Ensure all models have proxy field
+# Ensure all agents have proxy field
 # _ensure_model_proxies()
 
 cfg.update('runtime.console', console)

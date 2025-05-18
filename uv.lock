@@ -40,6 +40,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "ipykernel" },
+    { name = "jsonrpcclient" },
 ]
 
 [package.metadata]
@@ -70,7 +71,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "ipykernel", specifier = ">=6.29.5" }]
+dev = [
+    { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "jsonrpcclient", extras = ["requests"], specifier = ">=4.0.3" },
+]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -972,6 +976,14 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6a/0a/eebeb1fa92507ea94016a2a790b93c2ae41a7e18778f85471dc54475ed25/jsonpointer-3.0.0.tar.gz", hash = "sha256:2b2d729f2091522d61c3b31f82e11870f60b68f43fbc705cb76bf4b832af59ef", size = 9114 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/71/92/5e77f98553e9e75130c78900d000368476aed74276eb8ae8796f65f00918/jsonpointer-3.0.0-py2.py3-none-any.whl", hash = "sha256:13e088adc14fca8b6aa8177c044e12701e6ad4b28ff10e65f2267a90109c9942", size = 7595 },
+]
+
+[[package]]
+name = "jsonrpcclient"
+version = "4.0.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/4b/ba54814656b155f14ae73092ae194dd04eaf7e8e9a3da4f2ee7ffc9fe98f/jsonrpcclient-4.0.3-py3-none-any.whl", hash = "sha256:3cbb9e27e1be29821becf135ea183144a836215422727e1ffe5056a49a670f0d", size = 7009 },
 ]
 
 [[package]]

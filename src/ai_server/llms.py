@@ -3,6 +3,7 @@
 
 import logging
 from datetime import datetime
+from pydantic import AnyUrl
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage, HumanMessage, RemoveMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -43,8 +44,8 @@ def _get_llm(
         import httpx
         http_client = httpx.Client(proxy=cfg.proxies.__dict__.get(proxy, None))
         args['http_client'] = http_client
-    if tools:
-        args['tools'] = tools
+    # if tools:
+    #     args['tools'] = tools
 
     if model in ('o1', 'o3-mini', 'gpt-4o', 'gpt-4o-mini', 'o1-mini', 'o1-preview'):
         from langchain_openai import ChatOpenAI
@@ -169,7 +170,7 @@ def define_llm(state: State):
     )
     answer = cfg.runtime.define_llm.invoke(prompt).content
 
-    if answer not in cfg.models.__dict__.keys():
+    if answer not in cfg.agents.__dict__.keys():
         log.error(f'Defining suitable LLM went wrong: for message {message_to_define.content} was chosen: {answer}. Running "common".')
         answer = 'common'
     else:
@@ -182,8 +183,8 @@ def define_llm(state: State):
     }
 
     # If answer is for all LLMs, adding it to all, who uses common
-    if getattr(cfg.models, answer).history.post_to_common:
-        for name, model in vars(cfg.models).items():
+    if getattr(cfg.agents, answer).history.post_to_common:
+        for name, model in vars(cfg.agents).items():
             if model.history.use_common and name != answer:
                 return_values["messages"].update({name: message_to_define})
 
@@ -192,7 +193,7 @@ def define_llm(state: State):
 
 def cut_conversation(state: State) -> dict:
     current_llm = state['llm_to_use']
-    cut_history_after = getattr(cfg.models.__dict__[current_llm].history, "cut_after", 10)
+    cut_history_after = getattr(cfg.agents.__dict__[current_llm].history, "cut_after", 10)
     messages_to_cut = state['messages'][current_llm][:cut_history_after]
     
     pending_calls, _, _ = get_tool_calls_diff(messages=messages_to_cut)
@@ -268,12 +269,19 @@ class LLMNode:
         self.prompt_text = getattr(cfg.prompts, name, "You are smart qualified personal assistant. Answer all questions frankly.")
         # if name == 'summarize_llm':
         #     self.specific_
-        self.config = getattr(cfg.models, name)
+        self.config = getattr(cfg.agents, name)
         try:
             self.tools: list|None = getattr(cfg.runtime.tools, name)
         except:
             self.tools = None
-        
+
+        # Composing string from MCP resources by uris in agent config list.
+        try:
+            self.resources: str = '\n'.join([r.data for r in cfg.runtime.resources if str(r.metadata['uri']) in self.config.resources])
+        except Exception as e:
+            log.error(f'Error while compiling MCP resources for {self.name}: {e}')
+            self.resources = ""
+
         if self.config.proxy:
             self.proxy = getattr(cfg.proxies, self.config.proxy)
         else:
@@ -306,23 +314,23 @@ class LLMNode:
                 ('placeholder', '{conversation}'),
             ]
         )
-
-        prompt = prompt_template.invoke(
-            {
+        prompt_substitutions = {
                 'mood': cfg.runtime.mood,
                 'today': datetime.now().strftime("%a, %d %b %Y, %T"),
                 'username': _get_user_desc(state['user']),
                 'location': _get_location_desc(state['location']),
                 'summary': state.get('summary', dict()).get(self.name, ''),
                 'additional_instructions': state['additional_instructions'],
-                'conversation': state['messages'].get(self.name, [])
+                'conversation': state['messages'].get(self.name, []),
+                'mcp_resources': self.resources,
             }
-        )
-        if cfg.logging.debug.prompts:
-            log.debug(f'Prompt: {pretty_repr(clean_structure(prompt, ['.*metadata']), max_depth=3, max_string=100)}')
 
-        log.debug(pretty_repr(clean_structure(state['messages']), max_depth=5, max_string=100))
-        # log.debug(pretty_repr(state['messages'], max_depth=3, max_string=100))
+        prompt = prompt_template.invoke(prompt_substitutions)
+
+        if cfg.logging.debug.prompts:
+            log.debug(f'Prompt: {pretty_repr(clean_structure(prompt, ['.*metadata']), max_depth=3, max_string=10000)}')
+
+        # log.debug(pretty_repr(clean_structure(state['messages']), max_depth=5, max_string=100))
         answer = await self.llm.ainvoke(prompt)
 
         return_values = {
@@ -332,7 +340,7 @@ class LLMNode:
 
         # If answer is for all LLMs, adding it to all, who uses common
         if self.config.history.post_to_common:
-            for name, model in vars(cfg.models).items():
+            for name, model in vars(cfg.agents).items():
                 if model.history.use_common and name != self.name:
                     return_values["messages"].update({name: answer})
 
@@ -344,22 +352,24 @@ class LLMNode:
     def __repr__(self) -> str:
         return f'''LLM Node: \n
                 name: {self.name}, \n
-                prompt_text: {pretty_repr(self.prompt_text, max_string=200)}, \n
-                llm: {pretty_repr(self.llm, max_depth=3)}, \n
+                prompt_text: {pretty_repr(self.prompt_text, max_string=20000)}, \n
+                resources: {self.resources} \n
+                llm: {pretty_repr(self.llm, max_depth=3)} \n
+                config: {pretty_repr(self.config)} \n
             '''
                 # tools: {pretty_repr(self.tools)}. \n
 
 
-def init_models():
-    define_llm = _get_llm(model=cfg.models._define.model,
-                     temperature=cfg.models._define.temperature,
-                     streaming=cfg.models._define.streaming,
-                     proxy=cfg.models._define.proxy,
+def init_agents():
+    define_llm = _get_llm(model=cfg.agents._define.model,
+                     temperature=cfg.agents._define.temperature,
+                     streaming=cfg.agents._define.streaming,
+                     proxy=cfg.agents._define.proxy,
                      )
     cfg.update('runtime.define_llm', define_llm)
-    summarize_llm = _get_llm(model=cfg.models._summarize.model,
-                     temperature=cfg.models._summarize.temperature,
-                     streaming=cfg.models._summarize.streaming,
-                     proxy=cfg.models._summarize.proxy,
+    summarize_llm = _get_llm(model=cfg.agents._summarize.model,
+                     temperature=cfg.agents._summarize.temperature,
+                     streaming=cfg.agents._summarize.streaming,
+                     proxy=cfg.agents._summarize.proxy,
                      )
     cfg.update('runtime.summarize_llm', summarize_llm)

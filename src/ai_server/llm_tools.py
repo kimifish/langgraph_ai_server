@@ -2,15 +2,17 @@
 # pyright: reportAttributeAccessIssue=false
 
 from datetime import datetime
+from pydantic import AnyUrl
 from rich.pretty import pretty_repr
 from dataclasses import asdict
+from langchain_core.documents.base import Blob
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_mcp_adapters.client import MultiServerMCPClient
 import logging
 from langchain_core.tools import tool
 import urllib3
 from ai_server.tools.caldav import add_calendar_event, get_calendar_events
-from ai_server.tools.kimihome import get_items, send_command
+# from ai_server.tools.kimihome import get_items, send_command
 from ai_server.tools.music import get_music_by_tags, play_playlist, mpd_control, get_metadata_list
 
 from ai_server.config import cfg, APP_NAME
@@ -64,20 +66,35 @@ def init_tools():
     })
 
 async def init_mcp_tools(client: MultiServerMCPClient):
-        # tools = client.get_tools()
-        # log.debug(pretty_repr(tools))
-        tools_list: dict = asdict(cfg.runtime.tools)
+    # tools = client.get_tools()
+    # log.debug(pretty_repr(tools))
+    tools_list: dict = asdict(cfg.runtime.tools)
 
-        for name, mcp_list in client.server_name_to_tools.items():
-            if name in tools_list.keys() and isinstance(tools_list[name], list):
-                tools_list[name] += mcp_list
-            else:
-                tools_list[name] = mcp_list
+    for name, mcp_list in client.server_name_to_tools.items():
+        if name in tools_list.keys() and isinstance(tools_list[name], list):
+            tools_list[name] += mcp_list
+        else:
+            tools_list[name] = mcp_list
 
-        cfg.update('runtime.tools', tools_list)
-        # log.debug(cfg.format_attributes())
+    cfg.update('runtime.tools', tools_list)
+    # log.debug(cfg.format_attributes())
 
-async def init_mcp_sources(client: MultiServerMCPClient):
+async def init_mcp_resources(client: MultiServerMCPClient):
+    resources: list[Blob] = []
+    for name, _ in client.server_name_to_tools.items():
+        resources += await client.get_resources(name)
+
+    cfg.update('runtime.resources', resources)
+        # for resource in resources:
+        #     uri = AnyUrl(resource.metadata['uri'])
+        #     uri_path = [segment for segment in str(uri.path).split("/") if segment]
+        #     uri_path = ".".join(uri_path)
+        #     cfg.update(f"resources.{str(uri.host)}.{uri_path}", resource.data)
+
+        #     log.debug(resource.metadata)
+        #     log.debug(resource.data)
+
+async def init_mcp_prompts(client: MultiServerMCPClient):
     pass
 
 
