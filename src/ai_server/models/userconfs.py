@@ -8,9 +8,9 @@ from rich.pretty import pretty_repr
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 
-from ai_server.config import cfg, APP_NAME
+from ai_server.config import APP_NAME
 
-log = logging.getLogger(f'{APP_NAME}.{__name__}')
+log = logging.getLogger(f"{APP_NAME}.{__name__}")
 
 
 class UserConf(BaseModel):
@@ -29,11 +29,20 @@ class UserConfs:
         self.user_dict: dict[str, UserConf] = {}
 
     def add(self, **kwargs) -> UserConf:
-        thread_id = kwargs['thread_id']
-        if isinstance(thread_id, str):
-            kwargs['thread_id'] = RunnableConfig(configurable={"thread_id": thread_id})
+        original_thread_id = kwargs["thread_id"]
+        thread_id_key = (
+            original_thread_id
+            if isinstance(original_thread_id, str)
+            else original_thread_id["configurable"]["thread_id"]
+        )
+
+        if isinstance(original_thread_id, str):
+            kwargs["thread_id"] = RunnableConfig(
+                configurable={"thread_id": original_thread_id}
+            )
+
         conf = UserConf(**kwargs)
-        self.user_dict[thread_id] = conf
+        self.user_dict[thread_id_key] = conf
         log.debug(self)
         return conf
 
@@ -48,6 +57,8 @@ class UserConfs:
 
     def __str__(self) -> str:
         result = "UserConfs:\n"
-        for k, v in self.user_dict.items():
+        # Create a copy to avoid concurrent modification issues
+        items_copy = dict(self.user_dict)
+        for k, v in items_copy.items():
             result += f"{k}: {pretty_repr(v)}\n"
         return result

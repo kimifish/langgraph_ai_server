@@ -1,23 +1,25 @@
 # pyright: basic
 # pyright: reportAttributeAccessIssue=false
 
-from typing import Any, Dict, List, Union
+from typing import Any, List
 import logging
 import re
 from rich.pretty import pretty_repr
 from deepdiff.diff import DeepDiff
 from pydantic import BaseModel, ConfigDict
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+
 from ai_server.models.state import State
 
 
-log = logging.getLogger(f'{__name__}')
+log = logging.getLogger(f"{__name__}")
+
 
 def _log_state(state: State, tabs: int = 0):
     log.debug(pretty_repr(state, indent_size=4, max_string=50))
 
+
 def _parse_key(key: str):
-    # log.debug(f"key: {key}")
     # Regular expression pattern to match root['path1']['path2']...[index]
     pattern = r"^root(\['(?:[^']+)'\])+\[(\d+)\]$"
     path_pattern = r"'\s*([^']*)\s*'"  # Pattern to extract individual path segments
@@ -31,20 +33,12 @@ def _parse_key(key: str):
         index = int(main_match.group(2))
         return path_segments, index
     else:
-        # log.error("Input string is not in the expected format")
-        # raise ValueError(f"Input string is not in the expected format: {key}")
         return [], 0
 
-# def _grow_branch(tree: Tree, action: str, list_of_names: list[str], index: int, value):
-#     current_branch = tree
-#     for name in list_of_names:
-#         current_branch = current_branch.add(f"[light_steel_blue]+ {name}[/]")
-#     for b in range(0, index):
-#         current_branch.add(" ... ")
-#     current_branch.add(pretty_repr(value))
-#     return tree
 
-def sep_line(name: str, length: int = 90, color: str = 'light steel blue', symbol: str = '─'):
+def sep_line(
+    name: str, length: int = 90, color: str = "light steel blue", symbol: str = "─"
+):
     line_length = (length - len(name) - 2) // 2
     line = f"{symbol * line_length} {name} {symbol * line_length}"
     while len(line) < length:
@@ -53,38 +47,43 @@ def sep_line(name: str, length: int = 90, color: str = 'light steel blue', symbo
         line = line[:-1]
     log.debug(f"[{color}]{line}[/]")
 
+
 def log_diff(dict1, dict2):
     diff = DeepDiff(dict1, dict2)
     for key, value in diff.items():
         try:
-            if key.endswith('added'):
+            if key.endswith("added"):
                 for k, v in value.items():
-                    log.debug(f'[chartreuse2 underline] + {k}:[/]\n{pretty_repr(v)}')
-            elif key.endswith('removed'):
+                    log.debug(f"[chartreuse2 underline] + {k}:[/]\n{pretty_repr(v)}")
+            elif key.endswith("removed"):
                 for k, v in value.items():
-                    log.debug(f'[deep_pink4 underline] - {k}:[/]\n{pretty_repr(v)}')
-            elif key.endswith('changed'):
+                    log.debug(f"[deep_pink4 underline] - {k}:[/]\n{pretty_repr(v)}")
+            elif key.endswith("changed"):
                 for k, v in value.items():
-                    log.debug(f'[orange3 underline] ~ {k}:[/]\n{pretty_repr(v)}')
+                    log.debug(f"[orange3 underline] ~ {k}:[/]\n{pretty_repr(v)}")
             else:
                 log.debug(f"{key}:" + pretty_repr(value))
-        except AttributeError as e:
-            log.error(f'Key {key} does not contain items.')
+        except AttributeError:
+            log.error(f"Key {key} does not contain items.")
+
 
 class HumanMessage_(BaseModel):
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
+
 
 class AIMessage_(BaseModel):
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
+
 
 class ToolMessage_(BaseModel):
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
+
 
 types = {
     HumanMessage: HumanMessage_,
     AIMessage: AIMessage_,
     ToolMessage: ToolMessage_,
-    }
+}
 # Предполагаем, что BaseMessage имеет структуру, похожую на словарь,
 # или поля доступны по именам. Если это не так, потребуется уточнение.
 # Для примера, будем считать, что можно итерироваться по items() как у словаря.
@@ -92,15 +91,11 @@ types = {
 # потребуется импоортировать его и проверить его структуру.
 # Пока используем Any для гибкости.
 
+
 def clean_structure(
     data: Any,
-    regex_patterns: List[str] = [
-        'metadata',
-        'additional_kwargs',
-        'id',
-        '^example$'
-        ]
-    ) -> Any:
+    regex_patterns: List[str] = ["metadata", "additional_kwargs", "id", "^example$"],
+) -> Any:
     """
     Рекурсивно обходит структуру данных (списки, словари, объекты BaseMessage)
     и удаляет ветви, ключи которых соответствуют заданным регулярным выражениям.
@@ -125,20 +120,23 @@ def clean_structure(
             cleaned_list.append(clean_structure(item, regex_patterns))
         return cleaned_list
     # Добавляем обработку для объектов, которые являются BaseModel или имеют метод model_dump/dict
-    elif isinstance(data, BaseModel) or hasattr(data, 'model_dump') or hasattr(data, 'dict'):
+    elif (
+        isinstance(data, BaseModel)
+        or hasattr(data, "model_dump")
+        or hasattr(data, "dict")
+    ):
         cleaned_obj_data = {}
         # Пытаемся получить данные объекта как словарь (предпочитаем model_dump для Pydantic v2+)
         try:
-            obj_data = data.model_dump() if hasattr(data, 'model_dump') else data.dict()
+            obj_data = data.model_dump() if hasattr(data, "model_dump") else data.dict()
         except Exception:
             # Если не удалось получить словарь, используем vars() как запасной вариант
-            obj_data = vars(data) if hasattr(data, '__dict__') else {}
-
+            obj_data = vars(data) if hasattr(data, "__dict__") else {}
 
         for key, value in obj_data.items():
-             # Проверяем ключ/имя атрибута на соответствие любому из регулярных выражений
-             if not any(re.search(pattern, str(key)) for pattern in regex_patterns):
-                 cleaned_obj_data[key] = clean_structure(value, regex_patterns)
+            # Проверяем ключ/имя атрибута на соответствие любому из регулярных выражений
+            if not any(re.search(pattern, str(key)) for pattern in regex_patterns):
+                cleaned_obj_data[key] = clean_structure(value, regex_patterns)
 
         # Создаем новый объект того же типа с очищенными данными
         # Используем словарь types для маппинга оригинальных классов на заглушки
@@ -153,7 +151,9 @@ def clean_structure(
                 return new_instance
             except Exception as e:
                 # Если не удалось создать объект или присвоить атрибуты
-                log.error(f"Не удалось создать или заполнить экземпляр заглушки для {original_type}: {e}")
+                log.error(
+                    f"Не удалось создать или заполнить экземпляр заглушки для {original_type}: {e}"
+                )
                 # Возвращаем очищенный словарь как запасной вариант
                 return cleaned_obj_data
         else:
@@ -161,13 +161,13 @@ def clean_structure(
             return cleaned_obj_data
 
     # Добавляем обработку для других объектов с __dict__, которые не являются BaseModel
-    elif hasattr(data, '__dict__'):
+    elif hasattr(data, "__dict__"):
         cleaned_obj_data = {}
         obj_data = vars(data)
 
         for key, value in obj_data.items():
-             if not any(re.search(pattern, str(key)) for pattern in regex_patterns):
-                 cleaned_obj_data[key] = clean_structure(value, regex_patterns)
+            if not any(re.search(pattern, str(key)) for pattern in regex_patterns):
+                cleaned_obj_data[key] = clean_structure(value, regex_patterns)
         # Для других объектов без специфичной заглушки, возвращаем очищенный словарь
         return cleaned_obj_data
 

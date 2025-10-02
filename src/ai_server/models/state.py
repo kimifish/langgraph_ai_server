@@ -6,14 +6,15 @@ from typing import Annotated, Dict
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages, Messages
 
-from ai_server.config import cfg, APP_NAME
-log = logging.getLogger(f'{APP_NAME}.{__name__}')
+from ai_server.config import APP_NAME
+
+log = logging.getLogger(f"{APP_NAME}.{__name__}")
 
 MAX_PATHS = 10
 Messages_dict = Dict[str, Messages]
 
 
-def add_path(left: str|list, right: str|list) -> Annotated:
+def add_path(left: str | list, right: str | list) -> Annotated:
     """Keeps path as list of sublists. Starts new sublist if 'start' passed as right value.
 
     Args:
@@ -30,31 +31,33 @@ def add_path(left: str|list, right: str|list) -> Annotated:
     merged = left.copy()
     if len(merged) > MAX_PATHS:
         merged = merged[-MAX_PATHS:]
-    if right[0] == 'start':
+    if right[0] == "start":
         merged.append(list())
     for m in right:
         merged[-1].append(m)
     return merged
 
+
 def add_messages_to_dict(left: Messages_dict, right: Messages_dict) -> Messages_dict:
     for k, v in right.items():
-        # log.debug(f'{k=}, {v=}')
-        left[k] = add_messages(left=left.get(k, []), right=v if isinstance(v, list) else [v])
+        left[k] = add_messages(
+            left=left.get(k, []), right=v if isinstance(v, list) else [v]
+        )
     return left
+
 
 def add_summary(left: dict, right: dict) -> dict:
     for k, v in right.items():
-        # log.debug(f'{k=}, {v=}')
-        left[k] = v if isinstance(v, str) else ''
+        left[k] = v if isinstance(v, str) else ""
     return left
 
 
 class State(TypedDict):
-    # Messages kept in dict like 
+    # Messages kept in dict like
     # { "common": [HumanMessage, ],
     #   "school_tutor": [AIMessage, ],
     # }
-    messages: Annotated[ dict, add_messages_to_dict]
+    messages: Annotated[dict, add_messages_to_dict]
     user: str
     location: str
     additional_instructions: str
@@ -63,5 +66,4 @@ class State(TypedDict):
     last_messages: Dict
     thread_id: str
     path: Annotated[list, add_path]
-    summary: Annotated[ dict, add_summary]
-
+    summary: Annotated[dict, add_summary]

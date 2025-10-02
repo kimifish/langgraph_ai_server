@@ -1,0 +1,168 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: uv sync --dev
+
+    - name: Run type checking with pyright
+      run: uv run pyright
+
+    - name: Run unit tests
+      run: uv run pytest tests/unit/ -v --cov=src/ai_server --cov-report=xml --cov-report=term
+
+    - name: Run integration tests
+      run: uv run pytest tests/integration/ -v
+
+    - name: Run performance tests
+      run: uv run pytest tests/performance/ -v
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: uv sync --dev
+
+    - name: Run linting
+      run: |
+        # Check for syntax errors
+        uv run python -m py_compile src/ai_server/**/*.py
+
+        # Check import sorting (if isort is configured)
+        # uv run isort --check-only --diff src/ tests/
+
+        # Check code formatting (if black is configured)
+        # uv run black --check --diff src/ tests/
+
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: uv sync --dev
+
+    - name: Run security checks
+      run: |
+        # Check for known security vulnerabilities
+        uv run pip-audit --ignore-vulns "PYSEC-2021-123" || true  # Allow some known issues
+
+        # Check for secrets in code
+        # uv run detect-secrets scan --all-files
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test, lint, security]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: uv sync
+
+    - name: Build package
+      run: uv build
+
+    - name: Publish to PyPI (if configured)
+      if: github.repository_owner == 'kimifish'  # Only publish from main repo
+      run: |
+        uv run twine upload dist/* --skip-existing
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
+    - name: Deploy to staging (placeholder)
+      run: |
+        echo "Deploy to staging environment"
+        # Add actual deployment commands here
+        # Example: docker build, push to registry, deploy to k8s, etc.
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.message, 'release')
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Create GitHub release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.run_number }}
+        release_name: Release ${{ github.run_number }}
+        body: |
+          Automated release ${{ github.run_number }}
+
+          Changes in this release:
+          - See commit history for details
+        draft: false
+        prerelease: false
